@@ -1,0 +1,36 @@
+Soil Moistre Data : 1 ==> Kering
+
+Telemetri JSON (Publis Perangkat)
+{
+    "ID": "BT01",
+    "soil1": 1,
+    "soil2": 1,
+    "temperature": 30,
+    "humidity": 60.40000153,
+    "heatIndex": 32.91181946,
+    "time": "14:29:1",
+    "date": "17/1/2023"
+}
+
+Control Pompa JSON (Subscribe Perangkat)
+{
+    "ID": "BT01",
+    "POMPA1": 1,
+    "POMPA2": 1,
+    "temperature": 30,
+    "humidity": 60.40000153,
+    "heatIndex": 32.91181946,
+    "time": "14:29:1",
+    "date": "17/1/2023"
+}
+Cek Status JSON (Subscribe Perangkat)
+{
+    "ID_CHECK": "BT01",
+}
+
+Response Status JSON (Publis)
+{
+    "ID": "BT01",
+    "Status": "HIDUP"
+}
+

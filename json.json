@@ -1,0 +1,18 @@
+{
+    "STATUS_MOTOR1": 0,
+    "STATUS_MOTOR2": 0,
+    "ONTIME1": "00:00:00 0",
+    "ONTIME2": "00:00:00 0",
+    "ONTIME3": "00:00:00 0",
+    "ONTIME4": "00:00:00 0",
+    "ONTIME5": "00:00:00 0",
+    "ONTIME6": "00:00:00 0"
+}
+
+{
+    "ID_CHECK": "BT01",
+}
+{
+    "ID": "BT01",
+    "Status": "HIDUP"
+  }

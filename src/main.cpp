@@ -20,8 +20,8 @@
 
 // Panel Declaration
 String project = "Bitanic 2.0";
-String name = "BT01";
-String clientID = "bitanicv2-" + name;
+String id = "BT01";
+String clientID = "bitanicv2-" + id;
 
 // WiFi Setting
 const char* ssid = "Setting";
@@ -35,9 +35,10 @@ WiFiClient wifiClient;
 PubSubClient client(wifiClient);
 
 // Publis Topic
-String dataTopic = "bitanicv2/data/"+name;
+String telemetriTopic = "bitanicv2/telemetri";
 // Subscribe Topic
-String controlTopic = "bitanicv2/control/"+name;
+String controlTopic = "bitanicv2/"+id+"/pompa";
+String statusTopic = "bitanicv2/status";
 
 // Pin Declaration
 #define relay1 25
@@ -50,6 +51,8 @@ String controlTopic = "bitanicv2/control/"+name;
 // Variable Declaration
 int soilMoisture1Value = 0;
 int soilMoisture2Value = 0;
+String soilMoisture1Status = "";
+String soilMoisture2Status = "";
 float humidity = 0;
 float temperature = 0;
 float heatIndex = 0;
@@ -98,26 +101,11 @@ void buzz(int delayTime, int repeat)
 {
   for (int i = 0; i < repeat; i++)
   {
-    digitalWrite(Buzzer, HIGH);
+    tone(Buzzer, 2000);
     delay(delayTime);
-    digitalWrite(Buzzer, LOW);
+    tone(Buzzer, 0);
     delay(delayTime);
   }
-}
-
-void serialDataPrint()
-{
-  Serial.println("====================================");
-  Serial.println("          Data Bitanic 2.0");
-  Serial.println("====================================");
-  Serial.println("Waktu : " + timeNow + " | " + dateNow);
-  Serial.println("Soil Moisture 1 : " + String(soilMoisture1Value));
-  Serial.println("Soil Moisture 2 : " + String(soilMoisture2Value));
-  Serial.println("Suhu            : " + String(temperature) + " C");
-  Serial.println("Kelembaban      : " + String(humidity) + " %");
-  Serial.println("Indeks Panas    : " + String(heatIndex) + " C");
-  Serial.println("====================================");
-  Serial.println();
 }
 
 void lcdPrint(String text1, String text2)
@@ -133,9 +121,31 @@ void reconnect() {
   while (!client.connected()) {
     if (client.connect(clientID.c_str())) {
       client.subscribe(controlTopic.c_str());
+      client.subscribe(statusTopic.c_str());
     } else {
       delay(1000);
     }
+  }
+}
+
+void sendData(const char* topic, const char* payload) {
+  client.publish(topic, payload);
+  Serial.println("Sent: " + String(payload));
+}
+
+void callbackResponse(String topic, String payload) {
+  if (String(topic) == statusTopic) {
+    // Jika data ID_CHECK pada struktur JSON {"ID_CHECK": "BT01"} sama dengan ID pada device maka krim data status
+    // ambil kata terawal dari payload yang dipisahkan oleh ,
+    String id_check = payload.substring(0, payload.indexOf(",")); // ambil kata terawal dari payload yang dipisahkan oleh ,
+    if (id_check == id) {
+      String responseStatus = id+"_HIDUP";
+      sendData(statusTopic.c_str(), responseStatus.c_str());
+      Serial.println("Sent: " + responseStatus);
+    }  
+  }
+  else{
+    Serial.println("Topic not found");
   }
 }
 
@@ -144,12 +154,9 @@ void callback(char* topic, byte* payload, unsigned int length) {
   for (int i = 0; i < length; i++) {
     message += (char)payload[i];
   }
+  Serial.println("Message arrived on topic: " + String(topic));
   Serial.println("Received: " + message);
-}
-
-void sendData(const char* topic, const char* payload) {
-  client.publish(topic, payload);
-  Serial.println("Sent: " + String(payload));
+  callbackResponse(topic, message);
 }
 
 void setup()
@@ -163,6 +170,9 @@ void setup()
   Serial.println("Connected to WiFi");
   client.setServer(mqttServer, mqttPort);
   client.setCallback(callback);
+
+  adcAttachPin(soilMoisture1);
+  adcAttachPin(soilMoisture2);
   // pinMode declaration
   pinMode(relay1, OUTPUT);
   pinMode(relay2, OUTPUT);
@@ -204,9 +214,12 @@ void setup()
 Task dataUpdate(1000,[](){
   DateTime now = rtc.now(); // get the current time
   // = = = = = = = = = = = = = variable feed = = = = = = = = = = = = = 
-  soilMoisture1Value = analogRead(soilMoisture1);
+  soilMoisture1Value = digitalRead(soilMoisture1); // read soil moisture 1
   delay(500);
-  soilMoisture2Value = analogRead(soilMoisture2);
+  soilMoisture2Value = digitalRead(soilMoisture2); // read soil moisture 2
+  soilMoisture1Status = (soilMoisture1Value == 0) ? "Basah" : "Kering";
+  soilMoisture2Status = (soilMoisture2Value == 0) ? "Basah" : "Kering";
+
   humidity = dht.readHumidity();
   temperature = dht.readTemperature();
   heatIndex = dht.computeHeatIndex(temperature, humidity, false);
@@ -229,7 +242,7 @@ Task lcdUpdate(1500,[](){
     }
     else if (lcdQueue == 1)
     {
-      lcdPrint("Soil 1 : " + String(soilMoisture1Value), "Soil 2 : " + String(soilMoisture2Value));
+      lcdPrint("Soil 1 : " + soilMoisture1Status, "Soil 2 : " + soilMoisture2Status);
       lcdQueue = 2;
     }
     else if (lcdQueue == 2)
@@ -241,10 +254,10 @@ Task lcdUpdate(1500,[](){
   // End Milis for print LCD every 1000ms
 });
 
-Task mqttUpdate(5000,[](){
+Task mqttUpdate(30000,[](){
   // Kirim data JSON ke MQTT
   DynamicJsonDocument doc(1024);
-  doc["Name"] = name;
+  doc["ID"] = id;
   doc["soil1"] = soilMoisture1Value;
   doc["soil2"] = soilMoisture2Value;
   doc["temperature"] = temperature;
@@ -252,15 +265,15 @@ Task mqttUpdate(5000,[](){
   doc["heatIndex"] = heatIndex;
   doc["time"] = timeNow;
   doc["date"] = dateNow;
-  String output;
-  serializeJson(doc, output);
-  sendData(dataTopic.c_str(), output.c_str());
+  String telemetriData;
+  serializeJson(doc, telemetriData);
+  sendData(telemetriTopic.c_str(), telemetriData.c_str());
 });
 
 Task serialUpdate(2000,[](){
   // = = = = = = = = = = = = = Serial Print = = = = = = = = = = = = =
   Serial.println("====================================");
-  Serial.println("Name            : " + name);
+  Serial.println("ID              : " + id);
   Serial.println("Soil Moisture 1 : " + String(soilMoisture1Value));
   Serial.println("Soil Moisture 2 : " + String(soilMoisture2Value));
   Serial.println("Suhu            : " + String(temperature) + " C");
@@ -268,8 +281,9 @@ Task serialUpdate(2000,[](){
   Serial.println("Indeks Panas    : " + String(heatIndex) + " C");
   Serial.println("====================================");
   Serial.println();
-  Serial.println(dataTopic.c_str());
+  Serial.println(telemetriTopic.c_str());
   Serial.println(controlTopic.c_str());
+  Serial.println(statusTopic.c_str());
 });
 
 void loop()
@@ -282,5 +296,5 @@ void loop()
   dataUpdate.update();
   lcdUpdate.update();
   mqttUpdate.update();
-  serialUpdate.update();
+  // serialUpdate.update();
 }
