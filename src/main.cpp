@@ -40,6 +40,16 @@ String telemetriTopic = "bitanicv2/telemetri";
 String controlTopic = "bitanicv2/"+id+"/pompa";
 String statusTopic = "bitanicv2/status";
 
+// EEPROM Address
+int Senin = 0;
+int Selasa = 1;
+int Rabu = 2;
+int Kamis = 3;
+int Jumat = 4;
+int Sabtu = 5;
+int Minggu = 6;
+int TIME1 = 10;
+
 // Pin Declaration
 #define relay1 25
 #define relay2 26
@@ -58,6 +68,7 @@ float temperature = 0;
 float heatIndex = 0;
 String timeNow = "";
 String dateNow = "";
+String INOUTDATA;
 
 // LiquidCrystal_I2C Declaration
 LiquidCrystal_I2C lcd = LiquidCrystal_I2C(0x27, 16, 2);
@@ -144,6 +155,39 @@ void callbackResponse(String topic, String payload) {
       Serial.println("Sent: " + responseStatus);
     }  
   }
+  else if (String(topic) == controlTopic) {
+    String command = payload.substring(0, payload.indexOf("_")); // ambil kata terawal dari payload yang dipisahkan oleh ,
+    if (command == "MOTOR1") {
+      String status = payload.substring(payload.indexOf("_")+1); // ambil kata terakhir dari payload yang dipisahkan oleh ,
+      if (status == "1") {
+        digitalWrite(relay1, HIGH);
+        Serial.println("Motor 1 ON");
+        lcdPrint("Motor 1", "Hidup");
+        delay(1000);
+      }
+      else if (status == "0") {
+        digitalWrite(relay1, LOW);
+        Serial.println("Motor 1 OFF");
+        lcdPrint("Motor 1", "Mati");
+        delay(1000);
+      }
+    }
+    else if (command == "MOTOR2") {
+      String status = payload.substring(payload.indexOf("_")+1); // ambil kata terakhir dari payload yang dipisahkan oleh ,
+      if (status == "1") {
+        digitalWrite(relay2, HIGH);
+        Serial.println("Motor 2 ON");
+        lcdPrint("Motor 2", "Hidup");
+        delay(1000);
+      }
+      else if (status == "0") {
+        digitalWrite(relay2, LOW);
+        Serial.println("Motor 2 OFF");
+        lcdPrint("Motor 2", "Mati");
+        delay(1000);
+      }
+    }
+  }
   else{
     Serial.println("Topic not found");
   }
@@ -153,6 +197,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
   String message;
   for (int i = 0; i < length; i++) {
     message += (char)payload[i];
+    
   }
   Serial.println("Message arrived on topic: " + String(topic));
   Serial.println("Received: " + message);
@@ -162,6 +207,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
 void setup()
 {
   Serial.begin(9600);
+  EEPROM.begin(512);
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) {
     delay(1000);
@@ -272,18 +318,26 @@ Task mqttUpdate(30000,[](){
 
 Task serialUpdate(2000,[](){
   // = = = = = = = = = = = = = Serial Print = = = = = = = = = = = = =
-  Serial.println("====================================");
   Serial.println("ID              : " + id);
   Serial.println("Soil Moisture 1 : " + String(soilMoisture1Value));
   Serial.println("Soil Moisture 2 : " + String(soilMoisture2Value));
   Serial.println("Suhu            : " + String(temperature) + " C");
   Serial.println("Kelembaban      : " + String(humidity) + " %");
   Serial.println("Indeks Panas    : " + String(heatIndex) + " C");
-  Serial.println("====================================");
   Serial.println();
   Serial.println(telemetriTopic.c_str());
   Serial.println(controlTopic.c_str());
   Serial.println(statusTopic.c_str());
+  Serial.println();
+    // baca eeeprom 0 - 6 untuk mendapatkann nnilah status hari
+  Serial.println("EEPROM 0 Senin  : " + String(EEPROM.read(0)));
+  Serial.println("EEPROM 1 Selasa : " + String(EEPROM.read(1)));
+  Serial.println("EEPROM 2 Rabu   : " + String(EEPROM.read(2)));
+  Serial.println("EEPROM 3 Kamis  : " + String(EEPROM.read(3)));
+  Serial.println("EEPROM 4 Jumat  : " + String(EEPROM.read(4)));
+  Serial.println("EEPROM 5 Sabtu  : " + String(EEPROM.read(5)));
+  Serial.println("EEPROM 6 Minggu : " + String(EEPROM.read(6)));
+  Serial.println();
 });
 
 void loop()
@@ -297,4 +351,6 @@ void loop()
   lcdUpdate.update();
   mqttUpdate.update();
   // serialUpdate.update();
+
+
 }

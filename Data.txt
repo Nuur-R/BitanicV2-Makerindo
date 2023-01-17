@@ -34,3 +34,6 @@ Response Status JSON (Publis)
     "Status": "HIDUP"
 }
 
+MOTOR1_1 ==> Menghidupkan dan mematikan relay1
+MOTOR2_0 ==> Menghidupkan dan mematikan relay2
+SETHARI_1,1,1,1,1,1,1
