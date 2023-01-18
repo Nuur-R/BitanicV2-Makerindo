@@ -13,9 +13,9 @@
 #include <DHT_U.h>
 #include <RTClib.h>
 #include <EEPROM.h>
+#include <WiFiManager.h>
 #include <ArduinoJson.h>
 #include <PubSubClient.h>
-#include <WiFi.h>
 
 
 // Panel Declaration
@@ -36,21 +36,19 @@ PubSubClient client(wifiClient);
 
 // Publis Topic
 String telemetriTopic = "bitanicv2/telemetri";
-String subsPompaManualTopic = "bitanicv2/"+id+"/pompa/manual";
-String pubsPompaManualTopic = "bitanicv2/pompa/manual";
-String pompaJadwalTopic = "bitanicv2/pompa/jadwal";
 // Subscribe Topic
 String controlTopic = "bitanicv2/"+id+"/pompa";
 String statusTopic = "bitanicv2/status";
 
 // EEPROM Address
-int SeninEEPROM = 10;
-int SelasaEEPROM = 20;
-int RabuEEPROM = 30;
-int KamisEEPROM = 40;
-int JumatEEPROM = 50;
-int SabtuEEPROM = 60;
-int MingguEEPROM = 70;
+int Senin = 0;
+int Selasa = 1;
+int Rabu = 2;
+int Kamis = 3;
+int Jumat = 4;
+int Sabtu = 5;
+int Minggu = 6;
+int TIME1 = 10;
 
 // Pin Declaration
 #define relay1 25
@@ -135,7 +133,6 @@ void reconnect() {
     if (client.connect(clientID.c_str())) {
       client.subscribe(controlTopic.c_str());
       client.subscribe(statusTopic.c_str());
-      client.subscribe(subsPompaManualTopic.c_str());
     } else {
       delay(1000);
     }
@@ -158,42 +155,34 @@ void callbackResponse(String topic, String payload) {
       Serial.println("Sent: " + responseStatus);
     }  
   }
-  else if (String(topic) == subsPompaManualTopic) {
-    String motor1on = id+"_MOTOR1_HIDUP";
-    String motor1off = id+"_MOTOR1_MATI";
-    String motor2on = id+"_MOTOR2_HIDUP";
-    String motor2off = id+"_MOTOR2_MATI";
-    String command = payload.substring(0, payload.indexOf(",")); // ambil kata terawal dari payload yang dipisahkan oleh ,
+  else if (String(topic) == controlTopic) {
+    String command = payload.substring(0, payload.indexOf("_")); // ambil kata terawal dari payload yang dipisahkan oleh ,
     if (command == "MOTOR1") {
-      String status = payload.substring(payload.indexOf(",")+1); // ambil kata terakhir dari payload yang dipisahkan oleh ,
+      String status = payload.substring(payload.indexOf("_")+1); // ambil kata terakhir dari payload yang dipisahkan oleh ,
       if (status == "1") {
         digitalWrite(relay1, HIGH);
         Serial.println("Motor 1 ON");
-        sendData(pubsPompaManualTopic.c_str(), motor1on.c_str());
         lcdPrint("Motor 1", "Hidup");
         delay(1000);
       }
       else if (status == "0") {
         digitalWrite(relay1, LOW);
         Serial.println("Motor 1 OFF");
-        sendData(pubsPompaManualTopic.c_str(), motor1off.c_str());
         lcdPrint("Motor 1", "Mati");
         delay(1000);
       }
     }
     else if (command == "MOTOR2") {
-      String status = payload.substring(payload.indexOf(",")+1); // ambil kata terakhir dari payload yang dipisahkan oleh ,
+      String status = payload.substring(payload.indexOf("_")+1); // ambil kata terakhir dari payload yang dipisahkan oleh ,
       if (status == "1") {
         digitalWrite(relay2, HIGH);
         Serial.println("Motor 2 ON");
-        sendData(pubsPompaManualTopic.c_str(), motor2on.c_str());
         lcdPrint("Motor 2", "Hidup");
         delay(1000);
       }
       else if (status == "0") {
         digitalWrite(relay2, LOW);
         Serial.println("Motor 2 OFF");
-        sendData(pubsPompaManualTopic.c_str(), motor2off.c_str());
         lcdPrint("Motor 2", "Mati");
         delay(1000);
       }
@@ -219,12 +208,16 @@ void setup()
 {
   Serial.begin(9600);
   EEPROM.begin(512);
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(1000);
-    Serial.println("Connecting to WiFi...");
+  WiFiManager wm;  
+  bool res;
+  res = wm.autoConnect("BitanicV2");
+
+  if(!res) {
+    Serial.println("Failed to connect");
+  } 
+  else { 
+    Serial.println("connected...yeey :)");
   }
-  Serial.println("Connected to WiFi");
   client.setServer(mqttServer, mqttPort);
   client.setCallback(callback);
 
