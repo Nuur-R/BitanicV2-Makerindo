@@ -13,10 +13,10 @@
 #include <DHT_U.h>
 #include <RTClib.h>
 #include <EEPROM.h>
+#include <WiFi.h>
+#include <WiFiManager.h>
 #include <ArduinoJson.h>
 #include <PubSubClient.h>
-#include <WiFi.h>
-
 
 // Panel Declaration
 String project = "Bitanic 2.0";
@@ -31,6 +31,7 @@ const int mqttPort = 1883;
 const char* mqttUser = "";
 const char* mqttPassword = "";
 
+WiFiManager wm;
 WiFiClient wifiClient;
 PubSubClient client(wifiClient);
 
@@ -41,7 +42,8 @@ String pubsPompaManualTopic = "bitanicv2/pompa/manual";
 String pompaJadwalTopic = "bitanicv2/pompa/jadwal";
 // Subscribe Topic
 String controlTopic = "bitanicv2/"+id+"/pompa";
-String statusTopic = "bitanicv2/status";
+String subsStatusTopic = "bitanicv2/"+id+"/status";
+String pubsStatusTopic = "bitanicv2/status";
 
 // EEPROM Address
 int SeninEEPROM = 10;
@@ -134,7 +136,7 @@ void reconnect() {
   while (!client.connected()) {
     if (client.connect(clientID.c_str())) {
       client.subscribe(controlTopic.c_str());
-      client.subscribe(statusTopic.c_str());
+      client.subscribe(subsStatusTopic.c_str());
       client.subscribe(subsPompaManualTopic.c_str());
     } else {
       delay(1000);
@@ -148,13 +150,13 @@ void sendData(const char* topic, const char* payload) {
 }
 
 void callbackResponse(String topic, String payload) {
-  if (String(topic) == statusTopic) {
+  if (String(topic) == subsStatusTopic) {
     // Jika data ID_CHECK pada struktur JSON {"ID_CHECK": "BT01"} sama dengan ID pada device maka krim data status
     // ambil kata terawal dari payload yang dipisahkan oleh ,
     String id_check = payload.substring(0, payload.indexOf(",")); // ambil kata terawal dari payload yang dipisahkan oleh ,
     if (id_check == id) {
       String responseStatus = id+"_HIDUP";
-      sendData(statusTopic.c_str(), responseStatus.c_str());
+      sendData(pubsStatusTopic.c_str(), responseStatus.c_str());
       Serial.println("Sent: " + responseStatus);
     }  
   }
@@ -217,14 +219,42 @@ void callback(char* topic, byte* payload, unsigned int length) {
 
 void setup()
 {
+  WiFi.mode(WIFI_STA); // explicitly set mode, esp defaults to STA+AP  
   Serial.begin(9600);
   EEPROM.begin(512);
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(1000);
-    Serial.println("Connecting to WiFi...");
+
+  // LCD Initialization
+  lcd.init();
+  lcd.backlight();
+  lcd.clear();
+
+  lcdPrint("Bitaniv V2.0", id);
+  buzz(100, 2);
+  buzz(500, 1);
+  String wifiAP = "BitanicV2-"+id;
+  lcdPrint(wifiAP.c_str(), "192.162.4.1");
+  // WiFi.begin(ssid, password);
+  // while (WiFi.status() != WL_CONNECTED) {
+  //   delay(1000);
+  //   Serial.println("Connecting to WiFi...");
+  // }
+  // Serial.println("Connected to WiFi");
+
+  bool res;
+  res = wm.autoConnect(wifiAP.c_str()); // password protected ap
+  if(!res) {
+      Serial.println("Failed to connect");
+      // ESP.restart();
+  } 
+  else {
+      //if you get here you have connected to the WiFi    
+      Serial.println("connected...yeey :)");
+      lcdPrint("WiFi", "Connected");
+      buzz(100, 4);
+      buzz(700, 1);
   }
-  Serial.println("Connected to WiFi");
+  
+
   client.setServer(mqttServer, mqttPort);
   client.setCallback(callback);
 
@@ -237,10 +267,7 @@ void setup()
   pinMode(soilMoisture1, INPUT);
   pinMode(soilMoisture2, INPUT);
 
-  // LCD Initialization
-  lcd.init();
-  lcd.backlight();
-  lcd.clear();
+  
 
   // DHT Initialization
   dht.begin();
@@ -263,8 +290,8 @@ void setup()
     rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
   }
 
-  lcdPrint("Bitaniv V2.0", "Start...");
-  buzz(100, 3);
+  
+  
 }
 
 // task untuk mencetak hello world pada serial monitor per 10 detik sekali
@@ -338,7 +365,7 @@ Task serialUpdate(2000,[](){
   Serial.println();
   Serial.println(telemetriTopic.c_str());
   Serial.println(controlTopic.c_str());
-  Serial.println(statusTopic.c_str());
+  Serial.println(subsStatusTopic.c_str());
   Serial.println();
     // baca eeeprom 0 - 6 untuk mendapatkann nnilah status hari
   Serial.println("EEPROM 0 Senin  : " + String(EEPROM.read(0)));
