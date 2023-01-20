@@ -5,6 +5,7 @@
 // Description  : Development process of Bitanic 2.0
 
 #include <Arduino.h>
+#include <string.h>
 #include <SPI.h>
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
@@ -20,8 +21,8 @@
 
 // Panel Declaration
 String project = "Bitanic 2.0";
-String id = "BT01";
-String clientID = "bitanicv2-" + id;
+String id = "BT05";
+String clientID = "bitanicv2 " + id;
 
 // WiFi Setting
 const char* ssid = "Setting";
@@ -36,23 +37,12 @@ WiFiClient wifiClient;
 PubSubClient client(wifiClient);
 
 // Publis Topic
-String telemetriTopic = "bitanicv2/telemetri";
-String subsPompaManualTopic = "bitanicv2/"+id+"/pompa/manual";
-String pubsPompaManualTopic = "bitanicv2/pompa/manual";
-String pompaJadwalTopic = "bitanicv2/pompa/jadwal";
+String publisTopic = "bitanic";
 // Subscribe Topic
-String controlTopic = "bitanicv2/"+id+"/pompa";
-String subsStatusTopic = "bitanicv2/"+id+"/status";
-String pubsStatusTopic = "bitanicv2/status";
+String subscribeTopic = "bitanic/"+id;
 
 // EEPROM Address
-int SeninEEPROM = 10;
-int SelasaEEPROM = 20;
-int RabuEEPROM = 30;
-int KamisEEPROM = 40;
-int JumatEEPROM = 50;
-int SabtuEEPROM = 60;
-int MingguEEPROM = 70;
+int SetHariEEPROM = 10;
 
 // Pin Declaration
 #define relay1 25
@@ -67,12 +57,14 @@ int soilMoisture1Value = 0;
 int soilMoisture2Value = 0;
 String soilMoisture1Status = "";
 String soilMoisture2Status = "";
+int motor1Status = 0;
+int motor2Status = 0;
 float humidity = 0;
 float temperature = 0;
 float heatIndex = 0;
 String timeNow = "";
 String dateNow = "";
-String INOUTDATA;
+String JadwalHari = "";
 
 // LiquidCrystal_I2C Declaration
 LiquidCrystal_I2C lcd = LiquidCrystal_I2C(0x27, 16, 2);
@@ -135,9 +127,7 @@ void lcdPrint(String text1, String text2)
 void reconnect() {
   while (!client.connected()) {
     if (client.connect(clientID.c_str())) {
-      client.subscribe(controlTopic.c_str());
-      client.subscribe(subsStatusTopic.c_str());
-      client.subscribe(subsPompaManualTopic.c_str());
+      client.subscribe(subscribeTopic.c_str());
     } else {
       delay(1000);
     }
@@ -149,60 +139,87 @@ void sendData(const char* topic, const char* payload) {
   Serial.println("Sent: " + String(payload));
 }
 
+String getNumber(String str, int index) {
+  for (int i = 0; i < index; i++) {
+    int commaIndex = str.indexOf(',');
+    if (commaIndex == -1) { // jika tidak ditemukan koma
+      return "";
+    }
+    str = str.substring(commaIndex + 1);
+  }
+  int commaIndex = str.indexOf(',');
+  if (commaIndex == -1) {
+    return str;
+  }
+  return str.substring(0, commaIndex);
+}
+
+void sendMotorStatus(String id, int motor1Status, int motor2Status, String publishTopic) {
+  DynamicJsonDocument doc(1024);
+  doc["ID"] = id;
+  doc["MOTOR"]["STATUS_MOTOR1"] = motor1Status;
+  doc["MOTOR"]["STATUS_MOTOR2"] = motor2Status;
+  String statusMotorData;
+  serializeJson(doc, statusMotorData);
+  sendData(publishTopic.c_str(), statusMotorData.c_str());
+}
 void callbackResponse(String topic, String payload) {
-  if (String(topic) == subsStatusTopic) {
-    // Jika data ID_CHECK pada struktur JSON {"ID_CHECK": "BT01"} sama dengan ID pada device maka krim data status
-    // ambil kata terawal dari payload yang dipisahkan oleh ,
-    String id_check = payload.substring(0, payload.indexOf(",")); // ambil kata terawal dari payload yang dipisahkan oleh ,
-    if (id_check == id) {
-      String responseStatus = id+"_HIDUP";
-      sendData(pubsStatusTopic.c_str(), responseStatus.c_str());
-      Serial.println("Sent: " + responseStatus);
-    }  
-  }
-  else if (String(topic) == subsPompaManualTopic) {
-    String motor1on = id+"_MOTOR1_HIDUP";
-    String motor1off = id+"_MOTOR1_MATI";
-    String motor2on = id+"_MOTOR2_HIDUP";
-    String motor2off = id+"_MOTOR2_MATI";
-    String command = payload.substring(0, payload.indexOf(",")); // ambil kata terawal dari payload yang dipisahkan oleh ,
-    if (command == "MOTOR1") {
-      String status = payload.substring(payload.indexOf(",")+1); // ambil kata terakhir dari payload yang dipisahkan oleh ,
-      if (status == "1") {
+  
+
+  if (String(topic) == subscribeTopic) {
+    String command = payload.substring(0, payload.indexOf(","));
+    if (command == id){
+      DynamicJsonDocument doc(1024);
+      doc["ID"] = id;
+      doc["STATUS_AKTIF"] = 1;
+      String statusData;
+      serializeJson(doc, statusData);
+      sendData(publisTopic.c_str(), statusData.c_str());
+    }
+    else if (command == "MOTOR1"){
+      String status = getNumber(payload.c_str(), 1);
+      Serial.println("Status MOTOR1 : "+status);
+      if (status == "1"){
         digitalWrite(relay1, HIGH);
-        Serial.println("Motor 1 ON");
-        sendData(pubsPompaManualTopic.c_str(), motor1on.c_str());
-        lcdPrint("Motor 1", "Hidup");
-        delay(1000);
+        motor1Status = digitalRead(relay1);
+        sendMotorStatus(id, motor1Status, motor2Status, publisTopic);
+        lcdPrint("Motor 1", "ON");
+        buzz(1500, 3);
       }
-      else if (status == "0") {
+      else if (status == "0"){
         digitalWrite(relay1, LOW);
-        Serial.println("Motor 1 OFF");
-        sendData(pubsPompaManualTopic.c_str(), motor1off.c_str());
-        lcdPrint("Motor 1", "Mati");
-        delay(1000);
+        motor1Status = digitalRead(relay1);
+        sendMotorStatus(id, motor1Status, motor2Status, publisTopic);
+        lcdPrint("Motor 1", "OFF");
+        buzz(1500, 3);
       }
     }
-    else if (command == "MOTOR2") {
-      String status = payload.substring(payload.indexOf(",")+1); // ambil kata terakhir dari payload yang dipisahkan oleh ,
-      if (status == "1") {
+    else if (command == "MOTOR2"){
+      String status = getNumber(payload.c_str(), 1);
+      Serial.println("Status MOTOR2 : "+status);
+      if (status == "1"){
         digitalWrite(relay2, HIGH);
-        Serial.println("Motor 2 ON");
-        sendData(pubsPompaManualTopic.c_str(), motor2on.c_str());
-        lcdPrint("Motor 2", "Hidup");
-        delay(1000);
+        motor2Status = digitalRead(relay2);
+        sendMotorStatus(id, motor1Status, motor2Status, publisTopic);
+        lcdPrint("Motor 2", "ON");
+        buzz(1500, 3);
       }
-      else if (status == "0") {
+      else if (status == "0"){
         digitalWrite(relay2, LOW);
-        Serial.println("Motor 2 OFF");
-        sendData(pubsPompaManualTopic.c_str(), motor2off.c_str());
-        lcdPrint("Motor 2", "Mati");
-        delay(1000);
+        motor2Status = digitalRead(relay2);
+        sendMotorStatus(id, motor1Status, motor2Status, publisTopic);
+        lcdPrint("Motor 2", "ON");
+        buzz(1500, 3);
       }
     }
-  }
-  else{
-    Serial.println("Topic not found");
+    else if (command == "SETHARI"){
+      EEPROM.put(SetHariEEPROM, payload.c_str());
+      EEPROM.put(SetHariEEPROM+payload.length(), '\0');
+      EEPROM.commit();
+      JadwalHari = EEPROM.readString(SetHariEEPROM);
+      Serial.println("Jadwal Hari : "+JadwalHari);
+    }
+    
   }
 }
 
@@ -222,6 +239,7 @@ void setup()
   WiFi.mode(WIFI_STA); // explicitly set mode, esp defaults to STA+AP  
   Serial.begin(9600);
   EEPROM.begin(512);
+  JadwalHari = EEPROM.readString(SetHariEEPROM).c_str();
 
   // LCD Initialization
   lcd.init();
@@ -231,7 +249,7 @@ void setup()
   lcdPrint("Bitaniv V2.0", id);
   buzz(100, 2);
   buzz(500, 1);
-  String wifiAP = "BitanicV2-"+id;
+  String wifiAP = "BitanicV2 "+id;
   lcdPrint(wifiAP.c_str(), "192.162.4.1");
   // WiFi.begin(ssid, password);
   // while (WiFi.status() != WL_CONNECTED) {
@@ -303,12 +321,33 @@ Task dataUpdate(1000,[](){
   soilMoisture2Value = digitalRead(soilMoisture2); // read soil moisture 2
   soilMoisture1Status = (soilMoisture1Value == 0) ? "Basah" : "Kering";
   soilMoisture2Status = (soilMoisture2Value == 0) ? "Basah" : "Kering";
+  motor1Status = digitalRead(relay1);
+  motor2Status = digitalRead(relay2);
+  // = = = = = = = = = = = = = DHT11 = = = = = = = = = = = = =
 
   humidity = dht.readHumidity();
   temperature = dht.readTemperature();
   heatIndex = dht.computeHeatIndex(temperature, humidity, false);
   timeNow = String(now.hour(), DEC) + ":" + String(now.minute(), DEC) + ":" + String(now.second(), DEC);
   dateNow = String(now.day(), DEC) + "/" + String(now.month(), DEC) + "/" + String(now.year(), DEC);
+
+  // HIDUP MATIKAN POMPA
+  if (soilMoisture1Value == 1){
+    digitalWrite(relay1, HIGH);
+    sendMotorStatus(id, motor1Status, motor2Status, publisTopic);
+  }
+  else if (soilMoisture1Value == 0){
+    digitalWrite(relay1, LOW);
+    sendMotorStatus(id, motor1Status, motor2Status, publisTopic);
+  }
+  if (soilMoisture2Value == 1){
+    digitalWrite(relay2, HIGH);
+    sendMotorStatus(id, motor1Status, motor2Status, publisTopic);
+  }
+  else if (soilMoisture2Value == 0){
+    digitalWrite(relay2, LOW);
+    
+  }
 });
 
 int lcdMilis = 0;
@@ -342,16 +381,18 @@ Task mqttUpdate(30000,[](){
   // Kirim data JSON ke MQTT
   DynamicJsonDocument doc(1024);
   doc["ID"] = id;
-  doc["soil1"] = soilMoisture1Value;
-  doc["soil2"] = soilMoisture2Value;
-  doc["temperature"] = temperature;
-  doc["humidity"] = humidity;
-  doc["heatIndex"] = heatIndex;
-  doc["time"] = timeNow;
-  doc["date"] = dateNow;
+  doc["TELEMETRI"]["soil1"] = soilMoisture1Value;
+  doc["TELEMETRI"]["soil2"] = soilMoisture2Value;
+  doc["TELEMETRI"]["motor1"] = motor1Status;
+  doc["TELEMETRI"]["motor2"] = motor2Status;
+  doc["TELEMETRI"]["temperature"] = temperature;
+  doc["TELEMETRI"]["humidity"] = humidity;
+  doc["TELEMETRI"]["heatIndex"] = heatIndex;
+  doc["TELEMETRI"]["time"] = timeNow;
+  doc["TELEMETRI"]["date"] = dateNow;
   String telemetriData;
   serializeJson(doc, telemetriData);
-  sendData(telemetriTopic.c_str(), telemetriData.c_str());
+  sendData(publisTopic.c_str(), telemetriData.c_str());
 });
 
 Task serialUpdate(2000,[](){
@@ -359,22 +400,17 @@ Task serialUpdate(2000,[](){
   Serial.println("ID              : " + id);
   Serial.println("Soil Moisture 1 : " + String(soilMoisture1Value));
   Serial.println("Soil Moisture 2 : " + String(soilMoisture2Value));
+  Serial.println("Motor 1         : " + String(motor1Status));
+  Serial.println("Motor 2         : " + String(motor2Status));
   Serial.println("Suhu            : " + String(temperature) + " C");
   Serial.println("Kelembaban      : " + String(humidity) + " %");
   Serial.println("Indeks Panas    : " + String(heatIndex) + " C");
   Serial.println();
-  Serial.println(telemetriTopic.c_str());
-  Serial.println(controlTopic.c_str());
-  Serial.println(subsStatusTopic.c_str());
+  Serial.println(subscribeTopic.c_str());
+  Serial.println(publisTopic.c_str());
   Serial.println();
     // baca eeeprom 0 - 6 untuk mendapatkann nnilah status hari
-  Serial.println("EEPROM 0 Senin  : " + String(EEPROM.read(0)));
-  Serial.println("EEPROM 1 Selasa : " + String(EEPROM.read(1)));
-  Serial.println("EEPROM 2 Rabu   : " + String(EEPROM.read(2)));
-  Serial.println("EEPROM 3 Kamis  : " + String(EEPROM.read(3)));
-  Serial.println("EEPROM 4 Jumat  : " + String(EEPROM.read(4)));
-  Serial.println("EEPROM 5 Sabtu  : " + String(EEPROM.read(5)));
-  Serial.println("EEPROM 6 Minggu : " + String(EEPROM.read(6)));
+  
   Serial.println();
 });
 
@@ -388,7 +424,7 @@ void loop()
   dataUpdate.update();
   lcdUpdate.update();
   mqttUpdate.update();
-  // serialUpdate.update();
+  serialUpdate.update();
 
 
 }

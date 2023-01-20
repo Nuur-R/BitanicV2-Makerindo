@@ -11,6 +11,6 @@ SETONTIME5,16:30:00,30,*		//Set ONTIME5 at 16:30:00 for 30 minute
 GETDATA,*				//For Get Data Once
 RESETALL,*					//RESET the DEVICE
 SETMINGGU,15,*				//Total Minggu Motor nyala
-SETHARI1,1,1,1,1,1,1,*			//Dari senin sampai minggu, 1 = nyala, 0 = mati
+SETHARI,1,1,1,1,1,1,1,*			//Dari senin sampai minggu, 1 = nyala, 0 = mati
 
 {"ID":"BT4","SSID":"nutri-ferads","PASSWORD":"nutri-ferads","STATUS_MOTOR1":0,"STATUS_MOTOR2":0,"DATE":"17-12-2022","TIME":"13:35:46","DHT1Temp":42.6,"DHT1Hum":38,"DHT2Temp":42.3,"DHT2Hum":39,"ONTIME1":"00:00:00 0Menit","ONTIME2":"00:00:00 0Menit","ONTIME3":"00:00:00 0Menit","ONTIME4":"00:00:00 0Menit","ONTIME5":"00:00:00 0Menit","TOTALPEKAN":"END","CURRENTPEKAN":"0","DET_HARI":"0000000","HISTORY":"0000000"}
