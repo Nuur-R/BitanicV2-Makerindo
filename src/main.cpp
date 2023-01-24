@@ -42,13 +42,7 @@ String publisTopic = "bitanic";
 String subscribeTopic = "bitanic/" + id;
 
 // EEPROM Address
-int SundayEEPROM = 210;
-int MondayEEPROM = 220;
-int TuesdayEEPROM = 230;
-int WednesdayEEPROM = 240;
-int ThursdayEEPROM = 250;
-int FridayEEPROM = 260;
-int SaturdayEEPROM = 270;
+int SetHariEEPROM = 190;
 int JumlahMingguEEPROM = 200;
 int Minggu0EEPROM = 205;
 int SetOnTime1EEPROM = 100;
@@ -74,10 +68,12 @@ String motor2Status = "";
 float humidity = 0;
 float temperature = 0;
 float heatIndex = 0;
-String timeNow = "";
-String dateNow = "";
+String JadwalMinggu = "";
 String JadwalHari = "";
-int countEND = 0; // untuk menghitung jumlah END yang ada di EEPROM
+int Hari[7];
+String JadwalWaktu = "";
+String JadwalWaktuMinute = 0;
+
 
 // LiquidCrystal_I2C Declaration
 LiquidCrystal_I2C lcd = LiquidCrystal_I2C(0x27, 16, 2);
@@ -238,92 +234,36 @@ void callbackResponse(String topic, String payload){
         buzz(1500, 3);
       }
     }
-    else if (command == "SETHARI")
-    {
-      String TT;
-      if (getNumber(payload, 1) == "1")
-      {
-        EEPROM.writeString(SundayEEPROM, "Sunday");
-        TT = "1";
-      }
-      else
-      {
-        EEPROM.writeString(SundayEEPROM, "NONE");
-        TT = "0";
-      }
-      if (getNumber(payload, 2) == "1")
-      {
-        EEPROM.writeString(MondayEEPROM, "Monday");
-        TT += "1";
-      }
-      else
-      {
-        EEPROM.writeString(MondayEEPROM, "NONE");
-        TT += "0";
-      }
-      if (getNumber(payload, 3) == "1")
-      {
-        EEPROM.writeString(TuesdayEEPROM, "Tuesday");
-        TT += "1";
-      }
-      else
-      {
-        EEPROM.writeString(TuesdayEEPROM, "NONE");
-        TT += "0";
-      }
-      if (getNumber(payload, 4) == "1")
-      {
-        EEPROM.writeString(WednesdayEEPROM, "Wednesday");
-        TT += "1";
-      }
-      else
-      {
-        EEPROM.writeString(WednesdayEEPROM, "NONE");
-        TT += "0";
-      }
-      if (getNumber(payload, 5) == "1")
-      {
-        EEPROM.writeString(ThursdayEEPROM, "Thursday");
-        TT += "1";
-      }
-      else
-      {
-        EEPROM.writeString(ThursdayEEPROM, "NONE");
-        TT += "0";
-      }
-      if (getNumber(payload, 6) == "1")
-      {
-        EEPROM.writeString(FridayEEPROM, "Friday");
-        TT += "1";
-      }
-      else
-      {
-        EEPROM.writeString(FridayEEPROM, "NONE");
-        TT += "0";
-      }
-      if (getNumber(payload, 7) == "1")
-      {
-        EEPROM.writeString(SaturdayEEPROM, "Saturday");
-        TT += "1";
-      }
-      else
-      {
-        EEPROM.writeString(SaturdayEEPROM, "NONE");
-        TT += "0";
-      }
-      EEPROM.writeString(300, TT);
+    else if (command == "SETHARI"){
+      EEPROM.writeString(SetHariEEPROM, payload);
       Serial.println("SETHARI OK");
       EEPROM.commit();
+      JadwalHari = EEPROM.readString(SetHariEEPROM);
+      // split string input dengan delimiter ","
+      String parts[8];
+      int i = 0;
+      int j = 0;
+      while (i < JadwalHari.length()) {
+        if (JadwalHari[i] == ',') {
+          j++;
+        } else {
+          parts[j] += JadwalHari[i];
+        }
+        i++;
+      }
+      // masukkan nilai dari bagian kedua hingga kedelapan ke dalam array Hari
+      for (i = 1; i <= 7; i++) {
+        Hari[i - 1] = parts[i].toInt();
+      }
       lcdPrint("SETHARI OK", "Commit");
       buzz(500, 3);
     }
     else if (command == "SETMINGGU")
     {
-      countEND = 0;
       EEPROM.writeString(JumlahMingguEEPROM, getNumber(payload, 1));
-      EEPROM.writeString(Minggu0EEPROM, "0");
       Serial.println("SETMINGGU OK");
       EEPROM.commit();
+      JadwalMinggu = EEPROM.readString(JumlahMingguEEPROM);
       lcdPrint("SETMINGGU OK", "Commit");
       buzz(500, 3);
     }
@@ -332,17 +272,13 @@ void callbackResponse(String topic, String payload){
       EEPROM.writeString(SetOnTime1MinuteEEPROM, getNumber(payload, 2));
       Serial.println("SETONTIME1 OK");
       EEPROM.commit();
+      JadwalWaktu = EEPROM.readString(SetOnTime1EEPROM);
+      JadwalWaktuMinute = EEPROM.readString(SetOnTime1MinuteEEPROM);
       lcdPrint("SETONTIME OK", "Commit");
       buzz(500, 3);
     }
     else if (command == "GETDATA"){
-      Serial.println(EEPROM.readString(SundayEEPROM));
-      Serial.println(EEPROM.readString(MondayEEPROM));
-      Serial.println(EEPROM.readString(TuesdayEEPROM));
-      Serial.println(EEPROM.readString(WednesdayEEPROM));
-      Serial.println(EEPROM.readString(ThursdayEEPROM));
-      Serial.println(EEPROM.readString(FridayEEPROM));
-      Serial.println(EEPROM.readString(SaturdayEEPROM));
+      Serial.println(EEPROM.readString(SetHariEEPROM));;
       Serial.println(EEPROM.readString(JumlahMingguEEPROM));
       Serial.println(EEPROM.readString(Minggu0EEPROM));
       Serial.println(EEPROM.readString(SetOnTime1EEPROM));
@@ -524,7 +460,6 @@ Task mqttUpdate(30000, [](){
   serializeJson(doc, telemetriData);
   sendData(publisTopic.c_str(), telemetriData.c_str()); 
 });
-
 Task serialUpdate(2000, [](){
   // = = = = = = = = = = = = = Serial Print = = = = = = = = = = = = =
   Serial.println("ID              : " + id);
@@ -554,5 +489,19 @@ void loop()
   dataUpdate.update();
   lcdUpdate.update();
   mqttUpdate.update();
+    // baca waktu dari RTC
+  DateTime now = rtc.now();
+  // cek apakah saat ini hari yang dijadwalkan untuk menyiram
+  if (Hari[now.dayOfTheWeek()] == 1) {
+    // cek apakah sudah melewati jam penyiraman
+    if (now.hour() == JadwalWaktu.toInt().hour() && now.minute() >= TimeOn1.minute()) {
+      // aktifkan sistem penyiraman selama 30 menit
+      digitalWrite(relay1, HIGH);
+      digitalWrite(relay2, HIGH);
+      delay(30 * 60 * 1000);
+      digitalWrite(relay1, LOW);
+      digitalWrite(relay2, LOW);
+    }
+  }
   // serialUpdate.update();
 }
