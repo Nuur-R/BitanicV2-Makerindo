@@ -19,18 +19,20 @@
 #include <ArduinoJson.h>
 #include <PubSubClient.h>
 
+#include <esp_task_wdt.h>
+
 // Panel Declaration
 String project = "Bitanic 2.0";
 String id = "BT05";
-String clientID = "bitanicv2 " + id;
+String clientID = "bitanicV2 " + id;
 
 // WiFi Setting
-const char *ssid = "Setting";
-const char *password = "admin1234";
-const char *mqttServer = "broker.hivemq.com";
+const char* ssid = "Setting";
+const char* password = "admin1234";
+const char* mqttServer = "broker.hivemq.com";
 const int mqttPort = 1883;
-const char *mqttUser = "";
-const char *mqttPassword = "";
+const char* mqttUser = "";
+const char* mqttPassword = "";
 
 WiFiManager wm;
 WiFiClient wifiClient;
@@ -39,52 +41,26 @@ PubSubClient client(wifiClient);
 // Publis Topic
 String publisTopic = "bitanic";
 // Subscribe Topic
-String subscribeTopic = "bitanic/" + id;
+String subscribeTopic = "bitanic/"+id;
 
-// EEPROM Address
-int SundayEEPROM = 210;
-int MondayEEPROM = 220;
-int TuesdayEEPROM = 230;
-int WednesdayEEPROM = 240;
-int ThursdayEEPROM = 250;
-int FridayEEPROM = 260;
-int SaturdayEEPROM = 270;
-int JumlahMingguEEPROM = 200;
-int Minggu0EEPROM = 205;
-int SetOnTime1EEPROM = 100;
-int SetOnTime1MinuteEEPROM = 110;
+#define LED 2
+#define RELAY1 25
+#define RELAY2 26
+#define BUZZER 12
+// #define SCREEN_WIDTH 128
+// #define SCREEN_HEIGHT 64
+#define DHTPIN1 15
+// #define DHTPIN2 26
+#define DHTTYPE DHT22
+#define WDT_TIMEOUT 3
 
-// Pin Declaration
-#define relay1 25
-#define relay2 26
-#define soilMoisture1 13
-#define soilMoisture2 14
-#define DHTPIN 15
-#define Buzzer 12
-
-// Variable Declaration
-int soilMoisture1Value = 0;
-int soilMoisture2Value = 0;
-String soilMoisture1Status = "";
-String soilMoisture2Status = "";
-int motor1Value = 0;
-int motor2Value = 0;
-String motor1Status = "";
-String motor2Status = "";
-float humidity = 0;
-float temperature = 0;
-float heatIndex = 0;
-String timeNow = "";
-String dateNow = "";
-String JadwalHari = "";
-// int countEND = 0; // untuk menghitung jumlah END yang ada di EEPROM
-
-// LiquidCrystal_I2C Declaration
 LiquidCrystal_I2C lcd = LiquidCrystal_I2C(0x27, 16, 2);
 
-// DHT Declaration
-#define DHTTYPE DHT22
-DHT dht(DHTPIN, DHTTYPE);
+RTC_DS1307 rtc;
+// WiFiClient espClient;
+// PubSubClient client(espClient);
+DHT dht(DHTPIN1, DHTTYPE);
+// DHT dht2(DHTPIN2, DHTTYPE);
 
 int Detik, PortValue, countWifi, count2, State1, GlobalCount, h1, h2, LockTime, CountTime, CountMotor, TimeMotor, CountMinggu, TotalMinggu, OnDay, SaveOn, CountDayOn, countEND;
 float t1, t2;
@@ -92,48 +68,18 @@ unsigned long GlobalClock;
 String DATA[10], INPUTDATA, TimeNOW, DateNOW;
 bool Lock1, Lock2, Lock3, Lock4, LockDate, MotorLock, LockMQTT;
 // String ssid, password;
-
-// RTC Declaration
-RTC_DS3231 rtc;
 char daysOfTheWeek[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
-
-// Class untuk mengeksekusi program secara multiprocessing
-class Task
-{
-public:
-  Task(unsigned long interval, void (*callback)())
-  {
-    this->interval = interval;
-    this->callback = callback;
-    this->nextRun = millis() + interval;
-  }
-
-  void update()
-  {
-    if (millis() >= nextRun)
-    {
-      nextRun = millis() + interval;
-      callback();
-    }
-  }
-
-private:
-  unsigned long interval;
-  unsigned long nextRun;
-  void (*callback)();
-};
 
 void buzz(int delayTime, int repeat)
 {
   for (int i = 0; i < repeat; i++)
   {
-    tone(Buzzer, 2000);
+    tone(BUZZER, 2000);
     delay(delayTime);
-    tone(Buzzer, 0);
+    tone(BUZZER, 0);
     delay(delayTime);
   }
 }
-
 void lcdPrint(String text1, String text2)
 {
   lcd.clear();
@@ -143,237 +89,205 @@ void lcdPrint(String text1, String text2)
   lcd.print(text2);
 }
 
-void reconnect()
-{
-  while (!client.connected())
-  {
-    if (client.connect(clientID.c_str()))
-    {
-      client.subscribe(subscribeTopic.c_str());
-    }
-    else
-    {
-      delay(1000);
+void Send() {
+  DateTime now = rtc.now();
+  DynamicJsonDocument doc(1023);
+  doc["ID"] = "NF01";
+  doc["SSID"] = ssid;
+  doc["PASSWORD"] = password;
+  doc["STATUS_MOTOR1"] = digitalRead(RELAY1);
+  doc["STATUS_MOTOR2"] = digitalRead(RELAY2);
+  doc["DATE"] = String() + now.day() + "-" + now.month() + "-" + now.year();
+  doc["TIME"] = String() + now.hour() + ":" + now.minute() + ":" + now.second();
+  doc["DHT1Temp"] = t1;
+  doc["DHT1Hum"] = h1;
+  doc["DHT2Temp"] = t2;
+  doc["DHT2Hum"] = h2;
+  doc["ONTIME1"] = String() + EEPROM.readString(100) + "  " + EEPROM.readString(110) + "Menit";
+  doc["ONTIME2"] = String() + EEPROM.readString(120) + "  " + EEPROM.readString(130) + "Menit";
+  doc["ONTIME3"] = String() + EEPROM.readString(140) + "  " + EEPROM.readString(150) + "Menit";
+  doc["ONTIME4"] = String() + EEPROM.readString(160) + "  " + EEPROM.readString(170) + "Menit";
+  doc["ONTIME5"] = String() + EEPROM.readString(180) + "  " + EEPROM.readString(190) + "Menit";
+  doc["TOTALPEKAN"] = EEPROM.readString(200);
+  doc["CURRENTPEKAN"] = EEPROM.readString(205);
+  doc["DET_HARI"] = EEPROM.readString(300);
+  doc["HISTORY"] = EEPROM.readString(320);
+  String data = "";
+  serializeJson(doc, data);
+  serializeJson(doc, Serial);
+  Serial.println("Sending message to MQTT topic..");
+  client.beginPublish("ferads", data.length(), false);
+  client.print(data);
+  client.endPublish();
+}
+void callback(char* topic, byte* payload, unsigned int length) {
+  for (int i = 0; i < length; i++) {
+    char c = (char)payload[i];
+    if (c == ',') {
+      INPUTDATA.trim();
+      DATA[count2] = INPUTDATA;
+      count2++;
+      INPUTDATA = "";
+    } else if (c == '*') {
+      digitalWrite(BUZZER, HIGH);
+      if (DATA[0] == "SETSSID") {
+        EEPROM.writeString(0, DATA[1]);
+        Serial.println("NEW SSID SET");
+      } else if (DATA[0] == "SETPASSWORD") {
+        EEPROM.writeString(30, DATA[1]);
+        Serial.println("NEW PASSWORD SET");
+      } else if (DATA[0] == "MOTOR1") {
+        if (DATA[1] == "1") {
+          digitalWrite(RELAY1, HIGH);
+        } else {
+          digitalWrite(RELAY1, LOW);
+        }
+        Serial.print("RELAY1 = ");
+        Serial.println(digitalRead(RELAY1));
+      } else if (DATA[0] == "MOTOR2") {
+        if (DATA[1] == "1") {
+          digitalWrite(RELAY2, HIGH);
+        } else {
+          digitalWrite(RELAY2, LOW);
+        }
+        Serial.print("RELAY2 = ");
+        Serial.println(digitalRead(RELAY2));
+      } else if (DATA[0] == "GETDATA") {
+        //        GlobalCount = 0;
+        Serial.println(EEPROM.readString(0));
+        Serial.println(EEPROM.readString(30));
+        Send();
+      } else if (DATA[0] == "SETRTC") {
+        rtc.adjust(DateTime(DATA[1].toInt(), DATA[2].toInt(), DATA[3].toInt(), DATA[4].toInt(), DATA[5].toInt(), DATA[6].toInt()));
+        Serial.println("RTC UPDATED");
+      } else if (DATA[0] == "RESET") {
+        Serial.println("RESTARTING ESP");
+        ESP.restart();
+      } else if (DATA[0] == "SETONTIME1") {
+        EEPROM.writeString(100, DATA[1]);
+        EEPROM.writeString(110, DATA[2]);
+        Serial.println("SETONTIME1 OK");
+      } else if (DATA[0] == "SETONTIME2") {
+        EEPROM.writeString(120, DATA[1]);
+        EEPROM.writeString(130, DATA[2]);
+        Serial.println("SETONTIME2 OK");
+      } else if (DATA[0] == "SETONTIME3") {
+        EEPROM.writeString(140, DATA[1]);
+        EEPROM.writeString(150, DATA[2]);
+        Serial.println("SETONTIME3 OK");
+      } else if (DATA[0] == "SETONTIME4") {
+        EEPROM.writeString(160, DATA[1]);
+        EEPROM.writeString(170, DATA[2]);
+        Serial.println("SETONTIME4 OK");
+      } else if (DATA[0] == "SETONTIME5") {
+        EEPROM.writeString(180, DATA[1]);
+        EEPROM.writeString(190, DATA[2]);
+        Serial.println("SETONTIME5 OK");
+      } else if (DATA[0] == "SETMINGGU") {
+        countEND = 0;
+        EEPROM.writeString(200, DATA[1]);
+        EEPROM.writeString(205, "0");
+        Serial.println("SETMINGGU OK");
+      } else if (DATA[0] == "SETHARI") {
+        String TT;
+        if (DATA[1] == "1") {
+          EEPROM.writeString(210, "Sunday");
+          TT = "1";
+        } else {
+          EEPROM.writeString(210, "NONE");
+          TT = "0";
+        } if (DATA[2] == "1") {
+          EEPROM.writeString(220, "Monday");
+          TT += "1";
+        } else {
+          EEPROM.writeString(220, "NONE");
+          TT += "0";
+        } if (DATA[3] == "1") {
+          EEPROM.writeString(230, "Tuesday");
+          TT += "1";
+        } else {
+          EEPROM.writeString(230, "NONE");
+          TT += "0";
+        }  if (DATA[4] == "1") {
+          EEPROM.writeString(240, "Wednesday");
+          TT += "1";
+        } else {
+          EEPROM.writeString(240, "NONE");
+          TT += "0";
+        }  if (DATA[5] == "1") {
+          EEPROM.writeString(250, "Thursday");
+          TT += "1";
+        } else {
+          EEPROM.writeString(250, "NONE");
+          TT += "0";
+        }  if (DATA[6] == "1") {
+          EEPROM.writeString(260, "Friday");
+          TT += "1";
+        } else {
+          EEPROM.writeString(260, "NONE");
+          TT += "0";
+        }  if (DATA[7] == "1") {
+          EEPROM.writeString(270, "Saturday");
+          TT += "1";
+        } else {
+          EEPROM.writeString(270, "NONE");
+          TT += "0";
+        }
+        EEPROM.writeString(300, TT);
+        Serial.println("SETHARI OK");
+      } else if (DATA[0] == "RESETALL") {
+        digitalWrite(RELAY1, LOW);
+        digitalWrite(RELAY2, LOW);
+        EEPROM.writeString(100, "00:00:00");
+        EEPROM.writeString(110, "0");
+        EEPROM.writeString(120, "00:00:00");
+        EEPROM.writeString(130, "0");
+        EEPROM.writeString(140, "00:00:00");
+        EEPROM.writeString(150, "0");
+        EEPROM.writeString(160, "00:00:00");
+        EEPROM.writeString(170, "0");
+        EEPROM.writeString(180, "00:00:00");
+        EEPROM.writeString(190, "0");
+        EEPROM.writeString(200, "0");
+        EEPROM.writeString(205, "0");
+        EEPROM.writeString(210, "NONE");
+        EEPROM.writeString(220, "NONE");
+        EEPROM.writeString(230, "NONE");
+        EEPROM.writeString(240, "NONE");
+        EEPROM.writeString(250, "NONE");
+        EEPROM.writeString(260, "NONE");
+        EEPROM.writeString(270, "NONE");
+        EEPROM.writeString(280, "0");
+        EEPROM.writeString(300, "0000000");
+        EEPROM.writeString(310, "0");
+        EEPROM.writeString(320, "0000000");
+        Serial.println("RESETALL OK");
+      } else if (DATA[0] == "DIM") {
+        if (DATA[1] == "1") {
+          // display.dim(true);
+        } else {
+          // display.dim(false);
+        }
+      } else {
+        Serial.println("COMMAND UNDEFINED");
+      }
+      count2 = 0;
+      INPUTDATA = "";
+    } else {
+      INPUTDATA += c;
     }
   }
+  EEPROM.commit();
+  delay(200);
+  digitalWrite(BUZZER, LOW);
 }
 
-void sendData(const char *topic, const char *payload)
-{
-  client.publish(topic, payload);
-  Serial.println("Sent: " + String(payload));
-}
-
-String getNumber(String str, int index)
-{
-  for (int i = 0; i < index; i++)
-  {
-    int commaIndex = str.indexOf(',');
-    if (commaIndex == -1)
-    { // jika tidak ditemukan koma
-      return "";
-    }
-    str = str.substring(commaIndex + 1);
-  }
-  int commaIndex = str.indexOf(',');
-  if (commaIndex == -1)
-  {
-    return str;
-  }
-  return str.substring(0, commaIndex);
-}
-
-void sendMotorStatus(String id, int motor1Value, int motor2Value, String publishTopic)
-{
-  DynamicJsonDocument doc(1024);
-  doc["ID"] = id;
-  doc["MOTOR"]["STATUS_MOTOR1"] = motor1Value;
-  doc["MOTOR"]["STATUS_MOTOR2"] = motor2Value;
-  String statusMotorData;
-  serializeJson(doc, statusMotorData);
-  sendData(publishTopic.c_str(), statusMotorData.c_str());
-}
-void callbackResponse(String topic, String payload){
-  if (String(topic) == subscribeTopic)
-  {
-    String command = payload.substring(0, payload.indexOf(","));
-    if (command == id){
-      DynamicJsonDocument doc(1024);
-      doc["ID"] = id;
-      doc["STATUS_AKTIF"] = 1;
-      String statusData;
-      serializeJson(doc, statusData);
-      sendData(publisTopic.c_str(), statusData.c_str());
-    }
-    else if (command == "MOTOR1"){
-      String status = getNumber(payload.c_str(), 1);
-      Serial.println("Status MOTOR1 : " + status);
-      if (status == "1")
-      {
-        digitalWrite(relay1, HIGH);
-        motor1Value = digitalRead(relay1);
-        sendMotorStatus(id, motor1Value, motor2Value, publisTopic);
-        lcdPrint("Motor 1", "ON");
-        buzz(1500, 3);
-      }
-      else if (status == "0")
-      {
-        digitalWrite(relay1, LOW);
-        motor1Value = digitalRead(relay1);
-        sendMotorStatus(id, motor1Value, motor2Value, publisTopic);
-        lcdPrint("Motor 1", "OFF");
-        buzz(1500, 3);
-      }
-    }
-    else if (command == "MOTOR2"){
-      String status = getNumber(payload.c_str(), 1);
-      Serial.println("Status MOTOR2 : " + status);
-      if (status == "1")
-      {
-        digitalWrite(relay2, HIGH);
-        motor2Value = digitalRead(relay2);
-        sendMotorStatus(id, motor1Value, motor2Value, publisTopic);
-        lcdPrint("Motor 2", "ON");
-        buzz(1500, 3);
-      }
-      else if (status == "0")
-      {
-        digitalWrite(relay2, LOW);
-        motor2Value = digitalRead(relay2);
-        sendMotorStatus(id, motor1Value, motor2Value, publisTopic);
-        lcdPrint("Motor 2", "ON");
-        buzz(1500, 3);
-      }
-    }
-    else if (command == "SETHARI")
-    {
-      String TT;
-      if (getNumber(payload, 1) == "1")
-      {
-        EEPROM.writeString(SundayEEPROM, "Sunday");
-        TT = "1";
-      }
-      else
-      {
-        EEPROM.writeString(SundayEEPROM, "NONE");
-        TT = "0";
-      }
-      if (getNumber(payload, 2) == "1")
-      {
-        EEPROM.writeString(MondayEEPROM, "Monday");
-        TT += "1";
-      }
-      else
-      {
-        EEPROM.writeString(MondayEEPROM, "NONE");
-        TT += "0";
-      }
-      if (getNumber(payload, 3) == "1")
-      {
-        EEPROM.writeString(TuesdayEEPROM, "Tuesday");
-        TT += "1";
-      }
-      else
-      {
-        EEPROM.writeString(TuesdayEEPROM, "NONE");
-        TT += "0";
-      }
-      if (getNumber(payload, 4) == "1")
-      {
-        EEPROM.writeString(WednesdayEEPROM, "Wednesday");
-        TT += "1";
-      }
-      else
-      {
-        EEPROM.writeString(WednesdayEEPROM, "NONE");
-        TT += "0";
-      }
-      if (getNumber(payload, 5) == "1")
-      {
-        EEPROM.writeString(ThursdayEEPROM, "Thursday");
-        TT += "1";
-      }
-      else
-      {
-        EEPROM.writeString(ThursdayEEPROM, "NONE");
-        TT += "0";
-      }
-      if (getNumber(payload, 6) == "1")
-      {
-        EEPROM.writeString(FridayEEPROM, "Friday");
-        TT += "1";
-      }
-      else
-      {
-        EEPROM.writeString(FridayEEPROM, "NONE");
-        TT += "0";
-      }
-      if (getNumber(payload, 7) == "1")
-      {
-        EEPROM.writeString(SaturdayEEPROM, "Saturday");
-        TT += "1";
-      }
-      else
-      {
-        EEPROM.writeString(SaturdayEEPROM, "NONE");
-        TT += "0";
-      }
-      EEPROM.writeString(300, TT);
-      Serial.println("SETHARI OK");
-      EEPROM.commit();
-      lcdPrint("SETHARI OK", "Commit");
-      buzz(500, 3);
-    }
-    else if (command == "SETMINGGU")
-    {
-      countEND = 0;
-      EEPROM.writeString(JumlahMingguEEPROM, getNumber(payload, 1));
-      EEPROM.writeString(Minggu0EEPROM, "0");
-      Serial.println("SETMINGGU OK");
-      EEPROM.commit();
-      lcdPrint("SETMINGGU OK", "Commit");
-      buzz(500, 3);
-    }
-    else if (command == "SETONTIME1"){
-      EEPROM.writeString(SetOnTime1EEPROM, getNumber(payload, 1));
-      EEPROM.writeString(SetOnTime1MinuteEEPROM, getNumber(payload, 2));
-      Serial.println("SETONTIME1 OK");
-      EEPROM.commit();
-      lcdPrint("SETONTIME OK", "Commit");
-      buzz(500, 3);
-    }
-    else if (command == "GETDATA"){
-      Serial.println(EEPROM.readString(SundayEEPROM));
-      Serial.println(EEPROM.readString(MondayEEPROM));
-      Serial.println(EEPROM.readString(TuesdayEEPROM));
-      Serial.println(EEPROM.readString(WednesdayEEPROM));
-      Serial.println(EEPROM.readString(ThursdayEEPROM));
-      Serial.println(EEPROM.readString(FridayEEPROM));
-      Serial.println(EEPROM.readString(SaturdayEEPROM));
-      Serial.println(EEPROM.readString(JumlahMingguEEPROM));
-      Serial.println(EEPROM.readString(Minggu0EEPROM));
-      Serial.println(EEPROM.readString(SetOnTime1EEPROM));
-      Serial.println(EEPROM.readString(SetOnTime1MinuteEEPROM));
-    }
-  }
-}
-void callback(char *topic, byte *payload, unsigned int length)
-{
-  String message;
-  for (int i = 0; i < length; i++)
-  {
-    message += (char)payload[i];
-  }
-  Serial.println("Message arrived on topic: " + String(topic));
-  Serial.println("Received: " + message);
-  callbackResponse(topic, message);
-}
-
-void setup()
-{
-  WiFi.mode(WIFI_STA); // explicitly set mode, esp defaults to STA+AP
+void setup() {
   Serial.begin(9600);
   EEPROM.begin(512);
+
+  rtc.begin();
+  dht.begin();
 
   // LCD Initialization
   lcd.init();
@@ -383,7 +297,7 @@ void setup()
   lcdPrint("Bitaniv V2.0", id);
   buzz(100, 2);
   buzz(500, 1);
-  String wifiAP = "BitanicV2 " + id;
+  String wifiAP = "BitanicV2 "+id;
   lcdPrint(wifiAP.c_str(), "192.162.4.1");
   // WiFi.begin(ssid, password);
   // while (WiFi.status() != WL_CONNECTED) {
@@ -394,174 +308,76 @@ void setup()
 
   bool res;
   res = wm.autoConnect(wifiAP.c_str()); // password protected ap
-  if (!res)
-  {
-    Serial.println("Failed to connect");
-    // ESP.restart();
-  }
-  else
-  {
-    // if you get here you have connected to the WiFi
-    Serial.println("connected...yeey :)");
-    lcdPrint("WiFi", "Connected");
-    buzz(100, 4);
-    buzz(700, 1);
+  if(!res) {
+      Serial.println("Failed to connect");
+      // ESP.restart();
+  } 
+  else {
+      //if you get here you have connected to the WiFi    
+      Serial.println("connected...yeey :)");
+      lcdPrint("WiFi", "Connected");
+      buzz(100, 4);
+      buzz(700, 1);
   }
 
-  client.setServer(mqttServer, mqttPort);
+  pinMode(LED, OUTPUT);
+  pinMode(RELAY1, OUTPUT);
+  pinMode(RELAY2, OUTPUT);
+  pinMode(BUZZER, OUTPUT);
+
+  digitalWrite(RELAY1, LOW);
+  digitalWrite(RELAY2, LOW);
+  digitalWrite(LED, LOW);
+  digitalWrite(BUZZER, LOW);
+  LockTime = 0;
+
+
+  DateTime now = rtc.now();
+  while (WiFi.status() != WL_CONNECTED) {
+    DateTime now = rtc.now();
+    digitalWrite(LED, LOW);
+    Detik++;
+    State1 = 0;
+    lcdPrint("Connecting WiFi", "WiFi not connect");
+    Serial.println("WIFI NOT CONNECTED");
+    delay(1000);
+    if (Detik == 5) {
+      Lock1 == false;
+      break;
+    }
+  }
+  if (WiFi.status() == WL_CONNECTED) {
+    State1 = 1;
+    Lock1 = true;
+    lcdPrint("WiFi Connected", "Connecting MQTT");
+    digitalWrite(LED, HIGH);
+    Serial.println("WIFI CONNECTED");
+  }
+  client.setServer("broker.hivemq.com", 1883);
   client.setCallback(callback);
-
-  adcAttachPin(soilMoisture1);
-  adcAttachPin(soilMoisture2);
-  // pinMode declaration
-  pinMode(relay1, OUTPUT);
-  pinMode(relay2, OUTPUT);
-  pinMode(Buzzer, OUTPUT);
-  pinMode(soilMoisture1, INPUT);
-  pinMode(soilMoisture2, INPUT);
-
-  // DHT Initialization
-  dht.begin();
-
-// RTC Initialization
-#ifndef ESP8266
-  while (!Serial)
-    ; // wait for serial port to connect. Needed for native USB
-#endif
-  if (!rtc.begin())
-  {
-    Serial.println("Couldn't find RTC");
-    Serial.flush();
-    while (1)
-      delay(10);
+  while (!client.connected() && Lock1 == true) {
+    Serial.println("Connecting to MQTT...");
+    if (client.connect("NUTRIFERADS1")) {
+      State1 = 3;
+      lcdPrint("MQTT Connected", "MQTT Connected");
+      Serial.println("MQTT CONNECTED");
+    } else {
+      State1 = 4;
+      lcdPrint("MQTT Failed", "MQTT Failed");
+      digitalWrite(LED, LOW);
+      delay(500);
+      digitalWrite(LED, HIGH);
+      delay(100);
+      Serial.print("failed with state ");
+      Serial.print(client.state());
+    }
   }
-  if (rtc.lostPower())
-  {
-    Serial.println("RTC lost power, let's set the time!");
-    rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
-  }
+  Detik = 0;
+
+  client.subscribe(subscribeTopic.c_str());
 }
 
-// task untuk mencetak hello world pada serial monitor per 10 detik sekali
-Task dataUpdate(1000, [](){
-  DateTime now = rtc.now(); // get the current time
-  // = = = = = = = = = = = = = variable feed = = = = = = = = = = = = =
-  soilMoisture1Value = digitalRead(soilMoisture1); // read soil moisture 1
-  delay(500);
-  soilMoisture2Value = digitalRead(soilMoisture2); // read soil moisture 2
-  soilMoisture1Status = (soilMoisture1Value == 0) ? "Basah" : "Kering";
-  soilMoisture2Status = (soilMoisture2Value == 0) ? "Basah" : "Kering";
-  motor1Status = (motor1Value == 1) ? "HIDUP" : "MATI";
-  motor2Status = (motor2Value == 1) ? "HIDUP" : "MATI";
-
-  motor1Value = digitalRead(relay1);
-  motor2Value = digitalRead(relay2);
-  // = = = = = = = = = = = = = DHT11 = = = = = = = = = = = = =
-
-  humidity = dht.readHumidity();
-  temperature = dht.readTemperature();
-  heatIndex = dht.computeHeatIndex(temperature, humidity, false);
-  timeNow = String(now.hour(), DEC) + ":" + String(now.minute(), DEC) + ":" + String(now.second(), DEC);
-  dateNow = String(now.day(), DEC) + "/" + String(now.month(), DEC) + "/" + String(now.year(), DEC);
-
-  // // HIDUP MATIKAN POMPA dari Sensor
-  // if (soilMoisture1Value == 1){
-  //   digitalWrite(relay1, HIGH);
-  //   sendMotorStatus(id, motor1Value, motor2Value, publisTopic);
-  // }
-  // else if (soilMoisture1Value == 0){
-  //   digitalWrite(relay1, LOW);
-  //   sendMotorStatus(id, motor1Value, motor2Value, publisTopic);
-  // }
-  // if (soilMoisture2Value == 1){
-  //   digitalWrite(relay2, HIGH);
-  //   sendMotorStatus(id, motor1Value, motor2Value, publisTopic);
-  // }
-  // else if (soilMoisture2Value == 0){
-  //   digitalWrite(relay2, LOW);
-  // }
-});
-
-int lcdMilis = 0;
-int lcdQueue = 0;
-Task lcdUpdate(1500, [](){
-  // = = = = = = = = = = = = = LCD Print = = = = = = = = = = = = =
-  // Start Milis for print LCD every 1000ms
-  if (millis() - lcdMilis >= 1500)
-  {
-    lcdMilis = millis();
-    if (lcdQueue == 0)
-    {
-      lcdPrint(timeNow, dateNow);
-      lcdQueue = 1;
-    }
-    else if (lcdQueue == 1)
-    {
-      lcdPrint("Soil 1 : " + soilMoisture1Status, "Soil 2 : " + soilMoisture2Status);
-      lcdQueue = 2;
-    }
-    else if (lcdQueue == 2)
-    {
-      lcdPrint("Motor 1 : " + motor1Status, "Motor 2 : " + motor2Status);
-      lcdQueue = 3;
-    }
-    else if (lcdQueue == 3)
-    {
-      lcdPrint("T : " + String(temperature) + " C", "H : " + String(humidity) + " %");
-      lcdQueue = 0;
-    }
-  }
-  // End Milis for print LCD every 1000ms
-});
-
-Task mqttUpdate(30000, [](){
-  // Kirim data JSON ke MQTT
-  DynamicJsonDocument doc(1024);
-  doc["ID"] = id;
-  doc["TELEMETRI"]["soil1"] = soilMoisture1Value;
-  doc["TELEMETRI"]["soil2"] = soilMoisture2Value;
-  doc["TELEMETRI"]["motor1"] = motor1Value;
-  doc["TELEMETRI"]["motor2"] = motor2Value;
-  doc["TELEMETRI"]["temperature"] = temperature;
-  doc["TELEMETRI"]["humidity"] = humidity;
-  doc["TELEMETRI"]["heatIndex"] = heatIndex;
-  doc["TELEMETRI"]["time"] = timeNow;
-  doc["TELEMETRI"]["date"] = dateNow;
-  String telemetriData;
-  serializeJson(doc, telemetriData);
-  sendData(publisTopic.c_str(), telemetriData.c_str()); 
-});
-
-Task serialUpdate(2000, [](){
-  // = = = = = = = = = = = = = Serial Print = = = = = = = = = = = = =
-  Serial.println("ID              : " + id);
-  Serial.println("Soil Moisture 1 : " + String(soilMoisture1Value));
-  Serial.println("Soil Moisture 2 : " + String(soilMoisture2Value));
-  Serial.println("Motor 1         : " + String(motor1Value));
-  Serial.println("Motor 2         : " + String(motor2Value));
-  Serial.println("Suhu            : " + String(temperature) + " C");
-  Serial.println("Kelembaban      : " + String(humidity) + " %");
-  Serial.println("Indeks Panas    : " + String(heatIndex) + " C");
-  Serial.println();
-  Serial.println(subscribeTopic.c_str());
-  Serial.println(publisTopic.c_str());
-  Serial.println();
-  // baca eeeprom 0 - 6 untuk mendapatkann nnilah status hari  
-  Serial.println(); 
-});
-
-void loop()
-{
-  if (!client.connected())
-  {
-    reconnect();
-  }
-  client.loop();
-
-  dataUpdate.update();
-  lcdUpdate.update();
-  mqttUpdate.update();
-  // serialUpdate.update();
+void loop() {
   OnDay = 0;
   SaveOn = EEPROM.readString(280).toInt();
   if (EEPROM.readString(100) != "00:00:00") {
@@ -577,18 +393,15 @@ void loop()
   }
   DateTime now = rtc.now();
   if (now.minute() % 60 == 0) {
-    Serial.println("[580] "+String(now.minute()% 60)+" == 0");
     // display.dim(true);
   }
   if (now.minute() % 60 == 1) {
-    Serial.println("[584] "+String(now.minute()% 60)+" == 1");
     // display.dim(false);
   }
   if (now.second() != GlobalClock) {
     CountDayOn = 0;
     //    GlobalCount++;
     if (WiFi.status() != WL_CONNECTED) {
-      Serial.println("[591] WiFi.status() != WL_CONNECTED");
       Lock1 = false;
       State1 = 0;
     }
@@ -597,14 +410,12 @@ void loop()
       State1 = 4;
     }
     if (Lock1 == false) {
-      if (digitalRead(relay1) != HIGH || digitalRead(relay2) != HIGH) {
-        // digitalWrite(LED, LOW);
-        Serial.println("[601] digitalWrite(LED, LOW);");
+      if (digitalRead(RELAY1) != HIGH || digitalRead(RELAY2) != HIGH) {
+        digitalWrite(LED, LOW);
         Detik++;
         if (Detik == 5) {
           State1 = 5;
-          // ESP.restart();
-          Serial.println("[606] ESP.restart();");
+          ESP.restart();
         }
       }
     }
@@ -634,8 +445,8 @@ void loop()
         EEPROM.writeString(310, "0");
       }
       if (LockTime > 0 && Lock4 == false) {
-        digitalWrite(relay1, HIGH);
-        digitalWrite(relay2, HIGH);
+        digitalWrite(RELAY1, HIGH);
+        digitalWrite(RELAY2, HIGH);
         int KK = EEPROM.readString(280).toInt();
         KK++;
         EEPROM.writeString(280, String() + KK);
@@ -647,8 +458,7 @@ void loop()
           int LL = 320 + now.dayOfTheWeek();
           EEPROM.writeChar(LL, '1');
         }
-        // Send();
-        Serial.println("[650] Send();");
+        Send();
         Lock4 = true;
       }
     }
@@ -664,19 +474,13 @@ void loop()
       TimeMotor++;
     }
     if (TimeMotor >= CountMotor * 60 && Lock4 == true) {
-      digitalWrite(relay1, LOW);
-      digitalWrite(relay2, LOW);
-      // Send();
-      Serial.println("[669] Send();");
+      digitalWrite(RELAY1, LOW);
+      digitalWrite(RELAY2, LOW);
+      Send();
       Lock4 = false;
       LockTime = 0;
       TimeMotor = 0;
     }
-    // display.clearDisplay();
-    // display.setTextSize(1);
-    // display.setTextColor(SSD1306_WHITE);
-    Serial.println("[677] display.clearDisplay();");
-    lcdPrint("Display", "Clear");
     String Load = String() + daysOfTheWeek[now.dayOfTheWeek()] + ", ";
     if (now.day() < 10) {
       Load += String() + "0" + now.day();
@@ -692,16 +496,12 @@ void loop()
     Load += String() + "/" + now.year();
     if (Load.length() >= 21) {
       // display.setCursor(0, 0);
-      Serial.println("[694] display.setCursor(0, 0);");
     } else if (Load.length() == 20) {
       // display.setCursor(3, 0);
-      Serial.println("[697] display.setCursor(3, 0);");
     } else if (Load.length() == 19) {
       // display.setCursor(5, 0);
-      Serial.println("[700] display.setCursor(5, 0);");
     } else if (Load.length() == 18) {
       // display.setCursor(8, 0);
-      Serial.println("[703] display.setCursor(8, 0);");
     }
     Load += "\n      ";
     if (now.hour() < 10) {
@@ -723,10 +523,10 @@ void loop()
     }
     //    Load += "\n\nDHT1   :\nDHT2   :\nMOTOR1 :\nMOTOR2 :\n   WIFI CONNECTED\nA";
     if (now.second() % 10 <= 4) {
-      h1 = 123;
-      t1 = 123;
-      h2 = 456;
-      t2 = 456;
+      h1 = 123123;
+      t1 = 123123;
+      h2 = 456456;
+      t2 = 456456;
 
       if (isnan(h1) || isnan(t1)) {
         Serial.println(F("Failed to read from DHT sensor 1!"));
@@ -740,12 +540,12 @@ void loop()
       } else {
         Load += String() + "DHT2  :" + t2 + "'C " + h2 + "%\n";
       }
-      if (digitalRead(relay1) == 1) {
+      if (digitalRead(RELAY1) == 1) {
         Load += String() + "RELAY1:NYALA\n";
       } else {
         Load += String() + "RELAY1:MATI\n";
       }
-      if (digitalRead(relay2) == 1) {
+      if (digitalRead(RELAY2) == 1) {
         Load += String() + "RELAY2:NYALA\n";
       } else {
         Load += String() + "RELAY2:MATI\n";
@@ -760,13 +560,8 @@ void loop()
         Load += "    NO CONNECTION";
       } else if (State1 == 5) {
         Load += "    RESTARTING...";
-        // display.println(Load);
-        Serial.println("[763] display.println(Load);");
-        // display.display();
-        lcdPrint("R E S T A R T", "1 1 1 1 1 1 ");
         delay(1000);
-        // ESP.restart();
-        Serial.println("[768] ESP.restart();");
+        ESP.restart();
       }
     } else {
       Load += "\n\nDEV :NF01";
@@ -783,22 +578,15 @@ void loop()
         Load += "    NO CONNECTION";
       } else if (State1 == 5) {
         Load += "    RESTARTING...";
-        // display.println(Load);
-        // display.display();
-        lcdPrint("R E S T A R T", "2 2 2 2 22 ");
         delay(1000);
-        // ESP.restart();
-        Serial.println("[790] ESP.restart();");
+        ESP.restart();
       }
     }
     //    Serial.println(Load);
-    // display.println(Load);
-    // display.display();
-    lcdPrint(Load.substring(0, 16), Load.substring(16, 32));
     client.loop();
     GlobalClock = now.second();
   }
-  if (digitalRead(relay1) == HIGH || digitalRead(relay2) == HIGH) {
+  if (digitalRead(RELAY1) == HIGH || digitalRead(RELAY2) == HIGH) {
     MotorLock = true;
   } else {
     MotorLock = false;
@@ -883,3 +671,4 @@ void loop()
   EEPROM.commit();
   CountDayOn = 0;
 }
+
