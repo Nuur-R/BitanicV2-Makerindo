@@ -43,16 +43,34 @@ String publisTopic = "bitanic";
 // Subscribe Topic
 String subscribeTopic = "bitanic/"+id;
 
+
+
 #define LED 2
 #define RELAY1 25
 #define RELAY2 26
 #define BUZZER 12
+#define soilMoisture1 13
+#define soilMoisture2 14
 // #define SCREEN_WIDTH 128
 // #define SCREEN_HEIGHT 64
 #define DHTPIN1 15
 // #define DHTPIN2 26
 #define DHTTYPE DHT22
 #define WDT_TIMEOUT 3
+
+// Variable Declaration
+int soilMoisture1Value = 0;
+int soilMoisture2Value = 0;
+String soilMoisture1Status = "";
+String soilMoisture2Status = "";
+int motor1Status = 0;
+int motor2Status = 0;
+float humidity = 0;
+float temperature = 0;
+float heatIndex = 0;
+String timeNow = "";
+String dateNow = "";
+String JadwalHari = "";
 
 LiquidCrystal_I2C lcd = LiquidCrystal_I2C(0x27, 16, 2);
 
@@ -70,8 +88,71 @@ bool Lock1, Lock2, Lock3, Lock4, LockDate, MotorLock, LockMQTT;
 // String ssid, password;
 char daysOfTheWeek[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
 
-void buzz(int delayTime, int repeat)
-{
+void sendData(const char* topic, const char* payload) {
+  client.publish(topic, payload);
+  Serial.println("Sent: " + String(payload));
+}
+
+class Task{
+public:
+  Task(unsigned long interval, void (*callback)())
+  {
+    this->interval = interval;
+    this->callback = callback;
+    this->nextRun = millis() + interval;
+  }
+
+  void update()
+  {
+    if (millis() >= nextRun)
+    {
+      nextRun = millis() + interval;
+      callback();
+    }
+  }
+
+private:
+  unsigned long interval;
+  unsigned long nextRun;
+  void (*callback)();
+};
+
+Task mqttUpdate(30000,[](){
+  // Kirim data JSON ke MQTT
+  DynamicJsonDocument doc(1024);
+  doc["ID"] = id;
+  doc["TELEMETRI"]["soil1"] = "soilMoisture1Value";
+  doc["TELEMETRI"]["soil2"] = "soilMoisture2Value";
+  doc["TELEMETRI"]["motor1"] = "motor1Status";
+  doc["TELEMETRI"]["motor2"] = "motor2Status";
+  doc["TELEMETRI"]["temperature"] = temperature;
+  doc["TELEMETRI"]["humidity"] = humidity;
+  doc["TELEMETRI"]["heatIndex"] = heatIndex;
+  doc["TELEMETRI"]["time"] = timeNow;
+  doc["TELEMETRI"]["date"] = dateNow;
+  String telemetriData;
+  serializeJson(doc, telemetriData);
+  sendData(publisTopic.c_str(), telemetriData.c_str());
+});
+Task dataUpdate(1000,[](){
+  DateTime now = rtc.now(); // get the current time
+  // = = = = = = = = = = = = = variable feed = = = = = = = = = = = = = 
+  soilMoisture1Value = digitalRead(soilMoisture1); // read soil moisture 1
+  delay(500);
+  soilMoisture2Value = digitalRead(soilMoisture2); // read soil moisture 2
+  soilMoisture1Status = (soilMoisture1Value == 0) ? "Basah" : "Kering";
+  soilMoisture2Status = (soilMoisture2Value == 0) ? "Basah" : "Kering";
+  motor1Status = digitalRead(RELAY1);
+  motor2Status = digitalRead(RELAY2);
+  // = = = = = = = = = = = = = DHT11 = = = = = = = = = = = = =
+  humidity = dht.readHumidity();
+  temperature = dht.readTemperature();
+  heatIndex = dht.computeHeatIndex(temperature, humidity, false);
+  timeNow = String(now.hour(), DEC) + ":" + String(now.minute(), DEC) + ":" + String(now.second(), DEC);
+  dateNow = String(now.day(), DEC) + "/" + String(now.month(), DEC) + "/" + String(now.year(), DEC);
+});
+
+void buzz(int delayTime, int repeat){
   for (int i = 0; i < repeat; i++)
   {
     tone(BUZZER, 2000);
@@ -80,19 +161,17 @@ void buzz(int delayTime, int repeat)
     delay(delayTime);
   }
 }
-void lcdPrint(String text1, String text2)
-{
+void lcdPrint(String text1, String text2){
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print(text1);
   lcd.setCursor(0, 1);
   lcd.print(text2);
 }
-
-void Send() {
+void Send(){
   DateTime now = rtc.now();
   DynamicJsonDocument doc(1023);
-  doc["ID"] = "NF01";
+  doc["ID"] = id;
   doc["SSID"] = ssid;
   doc["PASSWORD"] = password;
   doc["STATUS_MOTOR1"] = digitalRead(RELAY1);
@@ -116,7 +195,7 @@ void Send() {
   serializeJson(doc, data);
   serializeJson(doc, Serial);
   Serial.println("Sending message to MQTT topic..");
-  client.beginPublish("ferads", data.length(), false);
+  client.beginPublish("bitanic", data.length(), false);
   client.print(data);
   client.endPublish();
 }
@@ -310,7 +389,8 @@ void setup() {
   res = wm.autoConnect(wifiAP.c_str()); // password protected ap
   if(!res) {
       Serial.println("Failed to connect");
-      // ESP.restart();
+      lcdPrint("WiFi Connect", "Failed");
+      ESP.restart();
   } 
   else {
       //if you get here you have connected to the WiFi    
@@ -324,6 +404,8 @@ void setup() {
   pinMode(RELAY1, OUTPUT);
   pinMode(RELAY2, OUTPUT);
   pinMode(BUZZER, OUTPUT);
+  pinMode(soilMoisture1, INPUT);
+  pinMode(soilMoisture2, INPUT);
 
   digitalWrite(RELAY1, LOW);
   digitalWrite(RELAY2, LOW);
@@ -353,7 +435,7 @@ void setup() {
     digitalWrite(LED, HIGH);
     Serial.println("WIFI CONNECTED");
   }
-  client.setServer("broker.hivemq.com", 1883);
+  client.setServer(mqttServer, mqttPort);
   client.setCallback(callback);
   while (!client.connected() && Lock1 == true) {
     Serial.println("Connecting to MQTT...");
@@ -564,7 +646,7 @@ void loop() {
         ESP.restart();
       }
     } else {
-      Load += "\n\nDEV :NF01";
+      Load += "\n\nDEV :"+id;
       Load += String() + "\nSSID:" + ssid;
       Load += "\nSERV:broker.hivemq";
       Load += "\nPORT:1883\n";
@@ -582,7 +664,8 @@ void loop() {
         ESP.restart();
       }
     }
-    //    Serial.println(Load);
+    Serial.println("\n[585]");
+    Serial.println(Load);
     client.loop();
     GlobalClock = now.second();
   }
@@ -649,25 +732,6 @@ void loop() {
     EEPROM.writeString(310, "0");
     EEPROM.writeString(320, "0000000");
   }
-  //  Serial.println(String() + "DATA SET ON 1: " + EEPROM.readString(100) + " MINUTE : " + EEPROM.readString(110));
-  //  Serial.println(String() + "DATA SET ON 2: " + EEPROM.readString(120) + " MINUTE : " + EEPROM.readString(130));
-  //  Serial.println(String() + "DATA SET ON 3: " + EEPROM.readString(140) + " MINUTE : " + EEPROM.readString(150));
-  //  Serial.println(String() + "DATA SET ON 4: " + EEPROM.readString(160) + " MINUTE : " + EEPROM.readString(170));
-  //  Serial.println(String() + "DATA SET ON 5: " + EEPROM.readString(180) + " MINUTE : " + EEPROM.readString(190));
-  //  Serial.println(String() + "DATA MINGGU : " + EEPROM.readString(200));
-  //  Serial.println(String() + "DATA CURRENT MINGGU: " + EEPROM.readString(205));
-  //  Serial.println(String() + "DATA MINGGU: " + EEPROM.readString(210));
-  //  Serial.println(String() + "DATA SENIN: " + EEPROM.readString(220));
-  //  Serial.println(String() + "DATA SELASA: " + EEPROM.readString(230));
-  //  Serial.println(String() + "DATA RABU: " + EEPROM.readString(240));
-  //  Serial.println(String() + "DATA KAMIS: " + EEPROM.readString(250));
-  //  Serial.println(String() + "DATA JUMAT: " + EEPROM.readString(260));
-  //  Serial.println(String() + "DATA SABTU: " + EEPROM.readString(270));
-  //  Serial.println(String() + "ONDAY: " + OnDay);
-  //  Serial.println(String() + "SAVEON: " + EEPROM.readString(280));
-  //  Serial.println(String() + "COUNT DAY ON: " + EEPROM.readString(310));
-  //  Serial.println(String() + "STRING DAY ON: " + EEPROM.readString(320));
-  //  Serial.println("\n\n");
   EEPROM.commit();
   CountDayOn = 0;
 }
