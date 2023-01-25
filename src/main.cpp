@@ -49,8 +49,8 @@ String subscribeTopic = "bitanic/"+id;
 #define RELAY1 25
 #define RELAY2 26
 #define BUZZER 12
-#define soilMoisture1 13
-#define soilMoisture2 14
+#define soilMoisture1 14
+#define soilMoisture2 13
 // #define SCREEN_WIDTH 128
 // #define SCREEN_HEIGHT 64
 #define DHTPIN1 15
@@ -453,15 +453,10 @@ void setup() {
   buzz(500, 1);
   String wifiAP = "BitanicV2 "+id;
   lcdPrint(wifiAP.c_str(), "192.162.4.1");
-  // WiFi.begin(ssid, password);
-  // while (WiFi.status() != WL_CONNECTED) {
-  //   delay(1000);
-  //   Serial.println("Connecting to WiFi...");
-  // }
-  // Serial.println("Connected to WiFi");
+  
 
   bool res;
-  res = wm.autoConnect(wifiAP.c_str()); // password protected ap
+  res = wm.autoConnect(wifiAP.c_str());
   if(!res) {
       Serial.println("Failed to connect");
       lcdPrint("WiFi Connect", "Failed");
@@ -536,11 +531,10 @@ void setup() {
 }
 
 void loop() {
-  if (WiFi.status() != WL_CONNECTED) {
-    lcdPrint("WiFi", "Disconnected");
-  }
-  if (!client.connected()) {
+  if (client.connected() == false) {
     lcdPrint("MQTT", "Disconnected");
+    buzz(200, 7);
+    ESP.restart();
   }
 
   OnDay = 0;
@@ -732,8 +726,8 @@ void loop() {
         ESP.restart();
       }
     }
-    Serial.println("\n[585]");
-    Serial.println(Load);
+    // Serial.println("\n[585]");
+    // Serial.println(Load);
     client.loop();
     GlobalClock = now.second();
   }
