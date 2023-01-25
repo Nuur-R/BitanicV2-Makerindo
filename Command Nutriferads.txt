@@ -1,3 +1,4 @@
+BT05,0,*
 SETSSID,ssid,*				//Setting SSID to Connect
 SETPASSWORD,password,*			//Setting Password to Connect
 MOTOR1,0,*				//SET MOTOR1 MANUAL ON/OFF

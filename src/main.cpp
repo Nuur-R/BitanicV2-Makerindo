@@ -111,6 +111,15 @@ void lcdPrint(String text1, String text2){
   lcd.setCursor(0, 1);
   lcd.print(text2);
 }
+void sendMotorStatus(String id, int motor1Status, int motor2Status, String publishTopic) {
+  DynamicJsonDocument doc(1024);
+  doc["ID"] = id;
+  doc["MOTOR"]["STATUS_MOTOR1"] = motor1Status;
+  doc["MOTOR"]["STATUS_MOTOR2"] = motor2Status;
+  String statusMotorData;
+  serializeJson(doc, statusMotorData);
+  sendData(publishTopic.c_str(), statusMotorData.c_str());
+}
 
 class Task{
 public:
@@ -140,10 +149,10 @@ Task mqttUpdate(30000,[](){
   // Kirim data JSON ke MQTT
   DynamicJsonDocument doc(1024);
   doc["ID"] = id;
-  doc["TELEMETRI"]["soil1"] = "soilMoisture1Value";
-  doc["TELEMETRI"]["soil2"] = "soilMoisture2Value";
-  doc["TELEMETRI"]["motor1"] = "motor1Status";
-  doc["TELEMETRI"]["motor2"] = "motor2Status";
+  doc["TELEMETRI"]["soil1"] = soilMoisture1Value;
+  doc["TELEMETRI"]["soil2"] = soilMoisture2Value;
+  doc["TELEMETRI"]["motor1"] = motor1Status;
+  doc["TELEMETRI"]["motor2"] = motor2Status;
   doc["TELEMETRI"]["temperature"] = temperature;
   doc["TELEMETRI"]["humidity"] = humidity;
   doc["TELEMETRI"]["heatIndex"] = heatIndex;
@@ -246,83 +255,93 @@ void callback(char* topic, byte* payload, unsigned int length) {
       count2++;
       INPUTDATA = "";
     } else if (c == '*') {
-      if (DATA[0] == "MOTOR1") {
+      if (DATA[0] == id) {
+        DynamicJsonDocument doc(1024);
+        doc["ID"] = id;
+        doc["STATUS_AKTIF"] = 1;
+        String statusData;
+        serializeJson(doc, statusData);
+        sendData(publisTopic.c_str(), statusData.c_str());
+        lcdPrint("ID : " + id, "Status : Aktif");
+        buzz(500,3);
+      }
+      else if (DATA[0] == "MOTOR1") {
         if (DATA[1] == "1") {
           digitalWrite(RELAY1, HIGH);
-          delay(300);
-          motor1Value = 1;
+          lcdPrint("MOTOR 1","Hidup");
+          sendMotorStatus(id, motor1Value, motor2Value, publisTopic);
+          buzz(500,3);
         } else {
           digitalWrite(RELAY1, LOW);
-          delay(300);
-          motor1Value = 0;
+          lcdPrint("MOTOR 1","Mati");
+          sendMotorStatus(id, motor1Value, motor2Value, publisTopic);
+          buzz(500,3);
         }
-        lcdPrint("MOTOR 1",motor1Status);
-        buzz(750,3);
       } else if (DATA[0] == "MOTOR2") {
         if (DATA[1] == "1") {
           digitalWrite(RELAY2, HIGH);
-          delay(300);
-          motor2Value = 1;
+          lcdPrint("MOTOR 2","Hidup");
+          sendMotorStatus(id, motor1Value, motor2Value, publisTopic);
+          buzz(500,3);
         } else {
           digitalWrite(RELAY2, LOW);
-          delay(300);
-          motor2Value = 0;
+          lcdPrint("MOTOR 2","Mati");
+          sendMotorStatus(id, motor1Value, motor2Value, publisTopic);
+          buzz(500,3);
         }
-        lcdPrint("MOTOR 2",motor2Status);
-        buzz(750,3);
       } else if (DATA[0] == "GETDATA") {
         Serial.println(EEPROM.readString(0));
         Serial.println(EEPROM.readString(30));
         Send();
         lcdPrint("SENDING DATA","OK...");
-        buzz(750,3);
+        buzz(500,3);
       } else if (DATA[0] == "SETRTC") {
         rtc.adjust(DateTime(DATA[1].toInt(), DATA[2].toInt(), DATA[3].toInt(), DATA[4].toInt(), DATA[5].toInt(), DATA[6].toInt()));
         Serial.println("RTC UPDATED");
         lcdPrint("RTC UPDATED","OK...");
-        buzz(750,3);
+        buzz(500,3);
       } else if (DATA[0] == "RESET") {
         Serial.println("RESTARTING ESP");
         lcdPrint("RESTARTING ESP","PLEASE WAIT...");
-        buzz(500,5);
+        buzz(300,5);
         ESP.restart();
       } else if (DATA[0] == "SETONTIME1") {
         EEPROM.writeString(100, DATA[1]);
         EEPROM.writeString(110, DATA[2]);
         Serial.println("SETONTIME1 OK");
         lcdPrint("SET ONTIME 1","OK...");
-        buzz(750,3);
+        buzz(500,3);
       } else if (DATA[0] == "SETONTIME2") {
         EEPROM.writeString(120, DATA[1]);
         EEPROM.writeString(130, DATA[2]);
         Serial.println("SETONTIME2 OK");
         lcdPrint("SET ONTIME 2","OK...");
-        buzz(750,3);
+        buzz(500,3);
       } else if (DATA[0] == "SETONTIME3") {
         EEPROM.writeString(140, DATA[1]);
         EEPROM.writeString(150, DATA[2]);
         Serial.println("SETONTIME3 OK");
         lcdPrint("SET ONTIME 3","OK...");
-        buzz(750,3);
+        buzz(500,3);
       } else if (DATA[0] == "SETONTIME4") {
         EEPROM.writeString(160, DATA[1]);
         EEPROM.writeString(170, DATA[2]);
         Serial.println("SETONTIME4 OK");
         lcdPrint("SET ONTIME 4","OK...");
-        buzz(750,3);
+        buzz(500,3);
       } else if (DATA[0] == "SETONTIME5") {
         EEPROM.writeString(180, DATA[1]);
         EEPROM.writeString(190, DATA[2]);
         Serial.println("SETONTIME5 OK");
-        lcdPrint("SET ONTIME","OK...");
-        buzz(750,3);
+        lcdPrint("SET ONTIME 5","OK...");
+        buzz(500,3);
       } else if (DATA[0] == "SETMINGGU") {
         countEND = 0;
         EEPROM.writeString(200, DATA[1]);
         EEPROM.writeString(205, "0");
         Serial.println("SETMINGGU OK");
         lcdPrint("SET MINGGU","OK...");
-        buzz(750,3);
+        buzz(500,3);
       } else if (DATA[0] == "SETHARI") {
         String TT;
         if (DATA[1] == "1") {
@@ -371,7 +390,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
         EEPROM.writeString(300, TT);
         Serial.println("SETHARI OK");
         lcdPrint("SETHARI", "OK...");
-        buzz(750,3);
+        buzz(500,3);
       } else if (DATA[0] == "RESETALL") {
         digitalWrite(RELAY1, LOW);
         digitalWrite(RELAY2, LOW);
@@ -400,11 +419,11 @@ void callback(char* topic, byte* payload, unsigned int length) {
         EEPROM.writeString(320, "0000000");
         Serial.println("RESETALL OK");
         lcdPrint("RESET ALL", "OK...");
-        buzz(750,3);
+        buzz(500,3);
       } else {
         Serial.println("COMMAND UNDEFINED");
         lcdPrint("COMMAND", "UNDEFINED");
-        buzz(300,7);
+        buzz(200,7);
       }
       count2 = 0;
       INPUTDATA = "";
@@ -476,7 +495,7 @@ void setup() {
     digitalWrite(LED, LOW);
     Detik++;
     State1 = 0;
-    lcdPrint("Connecting WiFi", "WiFi not connect");
+    lcdPrint("Connecting WiFi", "");
     Serial.println("WIFI NOT CONNECTED");
     delay(1000);
     if (Detik == 5) {
@@ -487,7 +506,7 @@ void setup() {
   if (WiFi.status() == WL_CONNECTED) {
     State1 = 1;
     Lock1 = true;
-    lcdPrint("WiFi Connected", "Connecting MQTT");
+    lcdPrint("WiFi Connected", "");
     digitalWrite(LED, HIGH);
     Serial.println("WIFI CONNECTED");
   }
@@ -495,9 +514,10 @@ void setup() {
   client.setCallback(callback);
   while (!client.connected() && Lock1 == true) {
     Serial.println("Connecting to MQTT...");
-    if (client.connect("NUTRIFERADS1")) {
+    String clientName = "BitanicV2-"+id;
+    if (client.connect(clientName.c_str(), mqttUser, mqttPassword )) {
       State1 = 3;
-      lcdPrint("MQTT Connected", "MQTT Connected");
+      lcdPrint("MQTT Connected", "");
       Serial.println("MQTT CONNECTED");
     } else {
       State1 = 4;
@@ -516,7 +536,13 @@ void setup() {
 }
 
 void loop() {
-  
+  if (WiFi.status() != WL_CONNECTED) {
+    lcdPrint("WiFi", "Disconnected");
+  }
+  if (!client.connected()) {
+    lcdPrint("MQTT", "Disconnected");
+  }
+
   OnDay = 0;
   SaveOn = EEPROM.readString(280).toInt();
   if (EEPROM.readString(100) != "00:00:00") {
@@ -649,8 +675,8 @@ void loop() {
     if (now.second() % 10 <= 4) {
       h1 = humidity;
       t1 = temperature;
-      h2 = 456456;
-      t2 = 456456;
+      h2 = 0;
+      t2 = 0;
 
       if (isnan(h1) || isnan(t1)) {
         Serial.println(F("Failed to read from DHT sensor 1!"));
