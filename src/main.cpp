@@ -46,8 +46,8 @@ String subscribeTopic = "bitanic/"+id;
 
 
 #define LED 2
-#define RELAY1 25
-#define RELAY2 26
+#define RELAY1 26
+#define RELAY2 25
 #define BUZZER 12
 #define soilMoisture1 14
 #define soilMoisture2 13
